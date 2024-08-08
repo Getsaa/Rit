@@ -1,7 +1,6 @@
 local PreloaderScreen = state()
 doneLoading = false
 local fade = {0}
-local lerpedFinshed = 0
 
 local ritLogo = Cache:loadImage("assets/images/ui/menu/logo.png")
 
@@ -23,13 +22,9 @@ local curRndText = ""
 local rndTime = 0
 local rndTimeMax = 5
 local finishedSongs = false
-local finishedDefault, finishedUser = false, false
 
 local threadChannel = love.thread.getChannel("ThreadChannels.LoadSongs.Output")
 local graphicThreadChannel = love.thread.getChannel("ThreadChannels.LoadGraphic.Output")
-
-local _songList = {}
-local nSongList = {}
 
 local total = 0
 local loaded = 0
@@ -61,7 +56,6 @@ function PreloaderScreen:enter(last, args)
     total = 1
 
     ThreadModules.LoadGraphic:start(unpack(assets))
-
     ThreadModules.LoadSongs:start()
 
     localize.loadLocale(Settings.options["General"].language)
@@ -121,12 +115,24 @@ function PreloaderScreen:draw()
     love.graphics.rectangle("fill", (Inits.GameWidth*0.05),Inits.GameWidth/2, (Inits.GameWidth*0.9) * percent, 50)
     love.graphics.setColor(1,1,1, percent)
 
+    ---@diagnostic disable-next-line: need-check-nil
     love.graphics.draw(ritLogo, Inits.GameWidth/2, Inits.GameHeight/2, 0, 0.5, 0.5, ritLogo:getWidth()/2, ritLogo:getHeight()/2)
     love.graphics.setColor(1,1,1,1)
 
     love.graphics.setColor(0, 0, 0, fade[1])
     love.graphics.rectangle("fill", 0, 0,Inits.GameWidth,Inits.GameHeight)
     love.graphics.setColor(1, 1, 1, 1)
-end    
+end
+
+function PreloaderScreen:exit()
+    rndTime = 0
+    loaded = 0
+    total = 0
+    finishedSongs = false
+    doneLoading = false
+
+    threadChannel = love.thread.getChannel("ThreadChannels.LoadSongs.Output")
+    graphicThreadChannel = love.thread.getChannel("ThreadChannels.LoadGraphic.Output")
+end
 
 return PreloaderScreen

@@ -22,12 +22,14 @@ function SoundManager:newSound(name, path, volume, loop, type)
         loop = loop,
         bpm = 120,
         beat = 0,
-        fullBeat = 0, -- not calculated with beat length, but an approximation
+        fullBeat = 0, 
         beatLength = 60 / 120,
         time = 0,
+        time2 = 0,
         lastFrameTime = 0,
         onBeat = function() end,
-        paused = false
+        paused = false,
+        pitch = 1,
     }
 end
 
@@ -49,6 +51,7 @@ function SoundManager:playFromTime(name, time, clone)
     local time = math.abs(time or 0)
     if not self.channel[name] then return end
     self.channel[name].paused = false
+    self.channel[name].time2 = time * 1000
     if clone then
         local clone = self.channel[name].sound:clone()
         clone:seek(time or 0)
@@ -68,6 +71,7 @@ function SoundManager:update(dt)
             v.lastFrameTime = love.timer.getTime()
         end
         v.time = v.time + (love.timer.getTime() - v.lastFrameTime)
+        v.time2 = v.time2 + (love.timer.getTime() - v.lastFrameTime)
         v.fullBeat = v.time / v.beatLength
         v.lastFrameTime = love.timer.getTime()
         if v.time >= v.beatLength then
@@ -123,6 +127,12 @@ function SoundManager:setLooping(name, loop)
     self.channel[name].sound:setLooping(loop)
 end
 
+function SoundManager:setPitch(name, pitch)
+    self.channel[name].pitch = pitch
+    self.channel[name].sound:setPitch(pitch)
+end
+
+
 function SoundManager:getLooping(name)
     return self.channel[name].loop
 end
@@ -137,7 +147,16 @@ function SoundManager:getBPM(name)
 end
 
 function SoundManager:getBeat(name)
+    if not self.channel[name] then return end
     return self.channel[name].beat
+end
+
+function SoundManager:getDecBeat(name)
+    local time = self.channel[name].time2
+
+    local decBeat = time / self.channel[name].beatLength
+
+    return decBeat
 end
 
 function SoundManager:getFullBeat(name)
@@ -165,7 +184,7 @@ function SoundManager:seek(name, seconds, unit)
 end
 
 function SoundManager:tell(name, unit)
-    return self.channel[name].sound:tell(unit)
+    return self.channel[name].sound:tell(unit or "seconds")
 end
 
 function SoundManager:clone(name)

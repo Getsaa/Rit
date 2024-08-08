@@ -23,11 +23,14 @@ function SongButton:new(y, diffs, bmType, name, artist, creator, description, ta
 
     self:load("assets/images/ui/menu/songTag.png")
 
+    table.sort(diffs, function(a, b)
+        return tonumber(a.nps) < tonumber(b.nps)
+    end)
+    
     for _, diff in ipairs(diffs) do
         local diffBtn = Sprite(0, self.height-55, "assets/images/ui/menu/diffBtn.png")
         diffBtn.text = diff.difficultyName
-        table.insert(self.children, diffBtn)
-        diffBtn.y = (#self.children-1) * diffBtn.height * 1.1
+        diffBtn.y = #self.children * diffBtn.height * 1.1
         diffBtn.x = -diffBtn.width
         diffBtn.name = diff.difficultyName
         diffBtn.chartVer = bmType
@@ -38,7 +41,12 @@ function SongButton:new(y, diffs, bmType, name, artist, creator, description, ta
         diffBtn.audioFile = diff.audioFile
         diffBtn.previewTime = diff.previewTime
         diffBtn.gameMode = gamemode
-        diffBtn.nps = nps
+        diffBtn.nps = diff.nps
+        diffBtn.keyMode = diff.mode
+        print(diff.gameMode)
+        diffBtn.gameMode = diff.gameMode
+    
+        table.insert(self.children, diffBtn)
     end
 
     self.extendedChildren[1] = Sprite(0, self.y + self.height-63, "assets/images/ui/menu/songTagSelectedBar.png")
@@ -55,17 +63,22 @@ end
 
 function SongButton:draw(transX, transY, current, total)
     -- return if not on screen
-    if self.y + (transX or 0) < -self.height or self.y + (transY or 0) > Inits.GameHeight+self.height then return end
+    if self.y + (transX or 0) < -self.height or self.y + (transY or 0) > Inits.GameHeight+self.height then 
+        if curTab == "songs" then
+            self.extendedChildren[1].y = self.y + self.height - 63
+        end
+
+        return
+    end
 
     if curTab == "songs" then
         if self.selected then
             self.extendedChildren[1].y = math.fpsLerp(self.extendedChildren[1].y, self.y + self.height - 45, 25)
-            self.x = math.fpsLerp(self.x, 0, 25)
+            self.x = math.fpsLerp(self.x, 0, 12.5)
         elseif not self.selected then
             self.extendedChildren[1].y = math.fpsLerp(self.extendedChildren[1].y, self.y + self.height - 63, 25)
-            self.x = math.fpsLerp(self.x, -125, 25)
+            self.x = math.fpsLerp(self.x, -125, 12.5)
         end
-
 
         -- I am so sorry for this code
         if self.selected then

@@ -1,8 +1,8 @@
 all: clean desktop dist
 
 desktop: lovefile win64 dist
+gitbuilds: clean lovefile win64 appimage gitdist
 console: lovefile switch
-appimage: lovefile
 
 # define GameName = "GameName"
 GameName = Rit
@@ -82,14 +82,27 @@ appimage: update_version lovefile
 
 	chmod +x ./requirements/appimage/appimagetool-x86_64.AppImage
 	./requirements/appimage/love.AppImage --appimage-extract
-	cat ./requirements/appimage/squashfs-root/bin/love build/$(GameName)-lovefile/$(GameName).love > ./requirements/appimage/squashfs-root/bin/love
+	
+	sed -i 's|Exec=love %f|Exec=Rit %f|' ./squashfs-root/love.desktop
+	sed -i 's|Exec=/home/runner/work/love-appimage-source/love-appimage-source/installdir/bin/love %f| Exec=/home/runner/work/love-appimage-source/love-appimage-source/installdir/bin/Rit %f|' ./squashfs-root/share/applications/love.desktop
+	
+	sed -i 's|/bin/love"|/bin/Rit"|' ./squashfs-root/AppRun
+	
+	cat ./squashfs-root/bin/love build/$(GameName)-lovefile/$(GameName).love > ./squashfs-root/bin/Rit
+	cp ./requirements/appimage/video.so ./squashfs-root/lib/
+	chmod +x ./squashfs-root/bin/Rit
+	./requirements/appimage/appimagetool-x86_64.AppImage ./squashfs-root/ build/$(GameName)-appimage/$(GameName).AppImage
 
-	chmod +x ./requirements/appimage/squashfs-root/bin/love
-	./requirements/appimage/appimagetool-x86_64.AppImage ./requirements/appimage/squashfs-root/ build/$(GameName)-appimage/$(GameName).AppImage
-	rm -rf ./requirements/appimage/squashfs-root
-
+	rm -rf squashfs-root
 dist:
 	rm -rf build/dist
 	mkdir build/dist
 	cd build/$(GameName)-win64 && zip -9 -r ../../build/dist/$(GameName)-win64.zip *
 	cp build/$(GameName)-lovefile/$(GameName).love build/dist/$(GameName).love
+
+gitdist:
+	rm -rf build/dist
+	mkdir build/dist
+	cd build/$(GameName)-win64 && zip -9 -r ../../build/dist/$(GameName)-win64.zip *
+	cp build/$(GameName)-lovefile/$(GameName).love build/dist/$(GameName).love
+	cp build/$(GameName)-appimage/$(GameName).AppImage build/dist/$(GameName).AppImage

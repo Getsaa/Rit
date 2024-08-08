@@ -1,3 +1,6 @@
+<!--
+NOTE TO SELF: Update links.
+-->
 # Rit
 
 ### A rhythm game made in LÖVE.
@@ -43,34 +46,34 @@
 
 # External Libraries
 - [baton.lua](/src/lib/baton.lua)
-- [discordRPC.lua](/src/lib/discordRPC.lua)
-- [json.lua](/src/lib/json.lua)
+- [discordRPC.lua](/src/lib/discordRPC.lua) * Modified slightly to support [this custom discordRPC library](https://github.com/hipvpitsme/discord-rpc-with-buttons)
+- [jsonhybrid.lua](/src/lib/jsonhybrid.lua) * Mix of 2 seperate json libraries, check out file for more info
 - [timer.lua](/src/lib/timer.lua)
 - [tinyyaml.lua](/src/lib/tinyyaml.lua)
-- [xml.lua](/src/lib/xml.lua)
 - [loveloader.lua](/src/lib/loveloader.lua)
 - [sworks](/src/lib/sworks/)
+- [aqua](/src/lib/aqua/) * Just the video module
 - [lovefs](/src/lib/lovefs/)
-- [aqua](/src/lib/aqua) (Just the video module)
-- [loveframes](/src/lib/loveframes)
-- [cimgui](/src/lib/cimgui)
+- [noobhub](/src/lib/networking/noobhub.lua)
 
 # Credits
 - [Getsaa](https://twitter.com/GetsaaNG) - UI/UX Design, Rit's Branding, and a few translations (Spanish & Portuguese)
 - [Lumaah](https://github.com/Lumaah) - French translation
 - [LÖVE](https://love2d.org/) - Game Framework
-- [Quaver](https://store.steampowered.com/app/980610/Quaver/) - Inspiration
-- [osu!](https://osu.ppy.sh/) - Inspiration
+- [Quaver](https://store.steampowered.com/app/980610/Quaver/) - Inspiration, Quaver beatmap format
+- [osu!](https://osu.ppy.sh/) - Inspiration, osu! beatmap format
 - [Average4k](https://twitter.com/Average4k) - Inspiration
-- [Stepmania](https://www.stepmania.com/) - Inspiration
-- [Malody](https://m.mugzone.net/) - Inspiration
+- [StepMania](https://www.stepmania.com/) - Inspiration, StepMania beatmap format
+- [Malody](https://m.mugzone.net/) - Inspiration, MalodyV beatmap format
 - [Etterna](https://etternaonline.com/) - Inspiration
-- [Kenney.nl](https://kenney.nl/) - Some assets
+- [fluXis](https://fluxis.flux.moe/) - Inspiration, fluXis beatmap format
+- [NotITG](https://www.noti.tg/) - Inspiration
+- [Kenney.nl](https://kenney.nl/) - UI Assets
 
-\* If you are not credited and you should be, please contact me on Discord or Twitter
+\* If you are not credited and you should be, please contact me on [Discord](https://discord.gg/ehY5gMMPW8) or [Twitter](https://twitter.com/GuglioIsStupid)
 
 # License
-- [GNU License](/LICENSE)
+This project is licensed under the [GNU License](https://www.gnu.org/licenses/gpl-3.0.en.html#license-text) [(File)](/LICENSE), 
 
 # Contact
 - [AGORI Discord](https://discord.gg/8RrzKnNtKW) / [GuglioIsStupid Discord](https://discord.gg/ehY5gMMPW8)
@@ -79,4 +82,5 @@
 # Useful links
 - [Quaver](https://quavergame.com/)
 - [osu!](https://osu.ppy.sh/)
+- [fluXis](https://fluxis.flux.moe)
 - [LÖVE](https://love2d.org/)

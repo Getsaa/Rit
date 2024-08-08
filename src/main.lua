@@ -2,6 +2,7 @@ fade = 1
 masterVolume = 50
 isLoading = false
 __DEBUG__ = not love.filesystem.isFused()
+utf8 = require("utf8")
 --[[ if not __DEBUG__ then 
     function print() end -- disable print if not in debug mode, allows for better performance (because writing to io is very slow)
 end ]]
@@ -10,6 +11,10 @@ local o_Print = print
 
 local printChannelThreadOutput = love.thread.getChannel("ThreadChannels.Print.Output")
 function print(...)
+    local args = {...}
+    for _, arg in ipairs(args) do
+        arg = tostring(arg)
+    end
     printChannelThreadOutput:push({...})
 end
 
@@ -27,7 +32,7 @@ require("modules.Utilities")
 ffi = require("ffi")
 
 Inits = require("init")
-__WINDOW_WIDTH, __WINDOW_HEIGHT = Inits.__WINDOW_WIDTH, Inits.__WINDOW_HEIGHT
+WindowWidth, WindowHeight = Inits.WindowWidth, Inits.WindowHeight
 
 _TRANSITION = {
     x = Inits.GameWidth,
@@ -37,9 +42,84 @@ _TRANSITION = {
     ovalHeight = 0
 }
 
+_AUDIOSLIDER = {
+    x = Inits.GameWidth - 200,
+    y = Inits.GameHeight - 25,
+    width = 175,
+    handleWidth = 8,
+    height = 10,
+    handleHeight = 16,
+    handleX = 0,
+    handleY = 0,
+    visible = false,
+    dragging = false,
+    timer = 0,
+    timerMax = 5,
+    updateHandlePosition = function(self)
+        local normalizedValue = masterVolume / 100
+        self.handleX = self.x + normalizedValue * (self.width - self.handleWidth)
+        self.handleY = self.y + (self.height - self.handleHeight) / 2
+    end,
+    update = function(self, dt)
+        self:updateHandlePosition()
+        if self.dragging then return end
+
+        self.timer = self.timer - dt
+        if self.timer < 0 then
+            self.visible = false
+        end
+    end,
+    mousemoved = function(self, x, y)
+        if not self.visible then return end
+
+        if self.dragging then
+            local newHandleX = math.clamp(self.x, x - self.handleWidth / 2, self.x + self.width - self.handleWidth)
+            local normalizedValue = (newHandleX - (self.x)) / (self.width - self.handleWidth)
+            masterVolume = normalizedValue * 100
+    
+            Settings.options["Audio"]["global"] = masterVolume
+        end
+    end,
+    mousepressed = function(self, x, y)
+        if not self.visible then return end
+
+        if x >= self.handleX and x <= self.handleX + self.handleWidth and y >= self.handleY and y <= self.handleY + self.handleHeight then
+            self.dragging = true
+        else
+            if x >= self.x and x <= self.x + self.width and
+               y >= self.y and y <= self.y + self.height then
+                local newHandleX = math.clamp(self.x, x - self.handleWidth / 2, self.x + self.width - self.handleWidth)
+                local normalizedValue = (newHandleX - (self.x)) / (self.width - self.handleWidth)
+                masterVolume = normalizedValue * 100
+    
+                Settings.options["Audio"]["global"] = masterVolume
+                self.dragging = true
+            end
+        end
+    end,
+    mousereleased = function(self, x, y)
+        if not self.visible then return end
+
+        self.dragging = false
+    end,
+    draw = function(self)
+        if not self.visible then return end
+        love.graphics.setColor(0, 0, 0, 0.5)
+        love.graphics.rectangle("fill", self.x-75, self.y-8, self.width+90, self.height+15, 10)
+        love.graphics.setColor(0.8, 0.8, 0.8)
+        love.graphics.rectangle("fill", self.x, self.y, self.width, self.height)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.rectangle("fill", self.handleX, self.handleY, self.handleWidth, self.handleHeight)
+        local lastFont = love.graphics.getFont()
+        love.graphics.setFont(Cache.members.font["defaultBold"])
+        love.graphics.print(string.format("%.2f", masterVolume), self.x - 59, self.y - 6)
+        love.graphics.setFont(lastFont)
+    end
+}
+
 function convertScissorCoordinates(x, y, width, height)
-    local scaleX = __WINDOW_WIDTH / Inits.GameWidth
-    local scaleY = __WINDOW_HEIGHT / Inits.GameHeight
+    local scaleX = WindowWidth / Inits.GameWidth
+    local scaleY = WindowHeight / Inits.GameHeight
     
     local convertedX = x * scaleX
     local convertedY = y * scaleY
@@ -69,7 +149,7 @@ DRAW_VIRTUAL_CONTROLLER = love.system.getSystem() == "Mobile"
 if love.system.getOS() == "Windows" then
     Try(
         function()
-           --Steam = require("lib.sworks.main")
+           Steam = require("lib.sworks.main")
             --[[ error("No Steamworks for Windows for GITHUB builds") ]]
         end,
         function()
@@ -109,12 +189,14 @@ local function CheckAprilFools()
     return CurrentDateTime.month == 4 and CurrentDateTime.day == 1
 end
 
+__FORCE_MOUSERELEASED_CANCEL__ = false
+
 function love.load(args)
     __NOTE_OBJECT_WIDTH = 0 -- Determined from the width of the noteskins note object.
 
     GameInit.LoadLibraries()
     importer = lovefs()
-    
+
     GameInit.ClearOSModule()
     GameInit.LoadClasses()
     GameInit.CreateFolders()
@@ -141,6 +223,7 @@ function love.load(args)
 
     -- Parse the skin's data file
     skinData = ini.parse(love.filesystem.read(skin:format("skin.ini")))
+    skinData.Miscellaneous = skinData.Miscellaneous or skinData.Misceallaneous
 
     -- Initialize 3rd party applications
     GameInit.InitSteam()
@@ -151,7 +234,7 @@ function love.load(args)
     gameScreen = love.graphics.newCanvas(Inits.GameWidth, Inits.GameHeight)
 
     MenuSoundManager = SoundManager()
-    masterVolume = Settings.options["General"].globalVolume * 100
+    masterVolume = Settings.options["Audio"].global
 
     doAprilFools = CheckAprilFools()
 
@@ -160,11 +243,33 @@ function love.load(args)
 
     love.keyboard.setKeyRepeat(true)
 
+    MAINGAME = {
+        shaderList = {},
+        curShader = "",
+        canvas = nil,
+        getShader = function(self, name)
+            return self.shaderList[name or self.curShader]
+        end
+    }
+
+    if love.graphics.getSupportedShader() then
+        MAINGAME.shaderList["Split"] = love.graphics.newShader("shaders/Split.glsl")
+        MAINGAME.shaderList["3D"] = love.graphics.newShader("shaders/3D.glsl")
+
+        --[[ MAINGAME.shaderList["3D"]:send("yrot", -0.24)
+        MAINGAME.shaderList["3D"]:send("zrot", 0.05)
+        MAINGAME.shaderList["3D"]:send("zpos", -0.13)
+        MAINGAME.shaderList["3D"]:send("xpos", 0.05) ]]
+
+        --[[ MAINGAME.curShader = "3D" ]]
+    end
+
     -- Lastly, switch to the preloader screen to preload all of our needed assets
     state.switch(states.screens.PreloaderScreen, args)
 end
 
 function love.update(dt)
+    threadLoader:update()
     if Steam and networking.connected then
         networking.frameCount = networking.frameCount + 1
         if networking.frameCount == 60 then
@@ -177,6 +282,7 @@ function love.update(dt)
     if not isLoading then state.update(dt) end
 
     updateAudioThread()
+    _AUDIOSLIDER:update(dt)
 
     if not __InJukebox then
         love.audio.setVolume(volume[1] * (masterVolume/100))
@@ -194,23 +300,41 @@ function love.update(dt)
     end
 
     MenuSoundManager:update(dt)
-    FPSOverlay:update(dt)
+    FPSOverlay:update(dt, love.timer.getFPS)
+    dtOverlay:update(dt, love.timer.getAverageMSDelta)
 end
 
 function love.filedropped(file)
     state.filedropped(file)
+
+    local curState = state.current()
+    if curState == states.menu.StartMenu or states.menu.SongMenu then
+        file:open("r")
+        local data = file:read("data")
+        local fullpath = file:getFilename()
+        local filename = fullpath:match("^.+\\(.+)$")
+        local extension = filename:match("^.+(%..+)$")
+        if extension == ".osz" or extension == ".qp" or extension == ".rit" or extension == ".fms" then
+            love.filesystem.write("songs/" .. filename, data)
+            switchState(states.screens.PreloaderScreen)
+        else
+            print("Wasn't given a proper file archive.")
+        end
+    end
 end
 
 function love.focus(f)
     state.focus(f)
-    if doneLoading then
-        if not f and volume then
-            love.setFpsCap(30)
-            Timer.tween(0.5, volume, {0.25}, "linear")
-        elseif f and volume then
-            love.setFpsCap(500)
-            Timer.tween(0.5, volume, {1}, "linear")
+    if not f and volume then
+        if Settings.options["Video"]["UnfocusedFPS"] then
+            love.setFpsCap(60)
         end
+        Timer.tween(0.5, volume, {0.25}, "linear")
+    elseif f and volume then
+        if Settings.options["Video"]["UnfocusedFPS"] then
+            setFpsCapFromSetting()
+        end
+        Timer.tween(0.5, volume, {1}, "linear")
     end
 end
 
@@ -230,36 +354,52 @@ function love.keypressed(key)
     --[[ elseif __DEBUG__ and key == "f6" then
         state.switch(states.screens.game.ResultsScreen, {score = 1000000, accuracy = 100, misses = 0, maxCombo = 423, rating = 19.23,
                                                     judgements = {
-                                                        marvellous = 423,
-                                                        perfect = 0,
-                                                        great = 0,
-                                                        good = 0,
-                                                        bad = 0,
+                                                        marvellous = 400,
+                                                        perfect = 10,
+                                                        great = 5,
+                                                        good = 7,
+                                                        bad = 1,
                                                         miss = 0
-                                                    }
+                                                    },
+                                                    timings = {
+                                                        {time = 0, musicTime = 2000},
+                                                        {time = 20, musicTime = 2000},
+                                                        {time = 40, musicTime = 4000},
+                                                        {time = 60, musicTime = 6000},
+                                                        {time = 80, musicTime = 8000},
+                                                        {time = 100, musicTime = 10000},
+                                                        {time = 120, musicTime = 12000},
+                                                        {time = 140, musicTime = 14000},
+                                                        {time = 160, musicTime = 16000}
+                                                    },
+                                                    songLength = 120*1000 -- in miilliseconds
     }) ]]
     end
 end
 
 function love.resize(w,h)
-    __WINDOW_WIDTH, __WINDOW_HEIGHT = w, h
+    WindowWidth, WindowHeight = w, h
+    Settings.options["Video"].Width, Settings.options["Video"].Height = w, h
+    Settings.options["Video"]["ScreenRes"] = w .. "x" .. h
     state.resize(w,h)
 end
+
 local os = love.system.getOS()
+
 function toGameScreen(x, y)
     if os ~= "Android" and os ~= "iOS" then
         -- converts our mouse position to the game screen (canvas) with the correct ratio
         local ratio = 1
-        ratio = math.min(__WINDOW_WIDTH/Inits.GameWidth, __WINDOW_HEIGHT/Inits.GameHeight)
+        ratio = math.min(WindowWidth/Inits.GameWidth, WindowHeight/Inits.GameHeight)
 
-        local x, y = x - __WINDOW_WIDTH/2, y - __WINDOW_HEIGHT/2
+        local x, y = x - WindowWidth/2, y - WindowHeight/2
         x, y = x / ratio, y / ratio
         x, y = x + Inits.GameWidth/2, y + Inits.GameHeight/2
 
         return x, y
     else
         -- same thing, but its a stretched res
-        local ratioX, ratioY = __WINDOW_WIDTH/Inits.GameWidth, __WINDOW_HEIGHT/Inits.GameHeight
+        local ratioX, ratioY = WindowWidth/Inits.GameWidth, WindowHeight/Inits.GameHeight
         local x, y = x / ratioX, y / ratioY
         return x, y
     end
@@ -269,6 +409,7 @@ function love.draw()
     local lastFont = love.graphics.getFont()
     love.graphics.setCanvas({gameScreen, stencil = true})
         love.graphics.clear(0,0,0,1)
+
         state.draw()
         love.graphics.setColor(0,0,0,1)
         love.graphics.rectangle("fill", _TRANSITION.x, _TRANSITION.y, _TRANSITION.width, Inits.GameHeight)
@@ -279,10 +420,17 @@ function love.draw()
         end
 
         FPSOverlay:draw()
+        dtOverlay:draw()
+
+        _AUDIOSLIDER:draw()
     love.graphics.setCanvas()
 
     -- ratio
-   if os ~= "Android" and os ~= "iOS" then
+    if love.graphics.getSupportedShader() then
+        ---@diagnostic disable-next-line: undefined-global
+        love.graphics.setShader(MAINGAME.shaderList[MAINGAME.curShader])
+    end
+    if os ~= "Android" and os ~= "iOS" then
         local ratio = 1
         ratio = math.min(love.graphics.getWidth()/Inits.GameWidth, love.graphics.getHeight()/Inits.GameHeight)
         love.graphics.setColor(1,1,1,1)
@@ -293,6 +441,9 @@ function love.draw()
         love.graphics.setColor(1,1,1,1)
         love.graphics.draw(gameScreen, 0, 0, 0, ratioX, ratioY)
     end 
+    if love.graphics.getSupportedShader() then
+        love.graphics.setShader()
+    end
 
     -- draw Popup.popups
     for _, popup in ipairs(Popup.popups) do
@@ -303,19 +454,11 @@ function love.draw()
     if Settings.options["General"].debugText then
         love.graphics.setFont(lastFont)
         love.graphics.print(
-            "FPS: " .. love.timer.getFPS() .. "\n" ..
-
             -- debug info
-            (__DEBUG__ and 
-            
-                ("Music Time: " .. (musicTime or "N/A") .. "\n" ..
-                "Draw Calls: " .. love.graphics.getStats().drawcalls .. "\n" ..
-                "Memory: " .. math.floor(collectgarbage("count")) .. "KB\n" ..
-                "Graphics Memory: " .. math.floor(love.graphics.getStats().texturememory/1024/1024) .. "MB\n") 
-
-                or ""
-            ) ..
-            --
+            ("Music Time: " .. (musicTime or "N/A") .. "\n" ..
+            "Draw Calls: " .. love.graphics.getStats().drawcalls .. "\n" ..
+            "Memory: " .. math.floor(collectgarbage("count")) .. "KB\n" ..
+            "Graphics Memory: " .. math.floor(love.graphics.getStats().texturememory/1024/1024) .. "MB\n") ..
         
             "Steam: " .. (Steam and "true" or "false") .. "\n" ..
             (Steam and "Steam User: " .. SteamUserName .. "\n" or "") ..
@@ -329,9 +472,6 @@ function love.quit()
     if discordRPC then
         discordRPC.shutdown()
     end
-
-    Settings.saveOptions()
-    SaveUserData.SaveData(_USERDATA)
 
     if Steam and networking.connected and networking.currentServerData then
         networking.hub:publish({
@@ -352,7 +492,6 @@ function love.quit()
             love.event.quit()
         end)
         Timer.tween(0.5, __audioEffectIntensity, {1}, "linear")
-        --[[ Timer.tween(0.5, volume, {0}, "linear") ]]
         return true
     end
 end

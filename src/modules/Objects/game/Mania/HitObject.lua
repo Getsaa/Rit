@@ -7,13 +7,6 @@ HitObject.canBeHit = false
 HitObject.tooLate = false
 HitObject.wasGoodHit = false
 
-HitObject.tail = {}
-HitObject.parent = nil
-
-HitObject.offsetX = 0
-HitObject.offsetY = 0
-
-HitObject.children = {}
 HitObject.moveWithScroll = true
 
 function HitObject:new(time, data, endTime) 
@@ -25,13 +18,12 @@ function HitObject:new(time, data, endTime)
     self.x = self.x + 25
     self.y = -2000
 
-    self.time = time
-    self.endTime = endTime
+    self.time = time / Modifiers.Rate
+    self.endTime = Modifiers.NLN == false and ((endTime or -1) / Modifiers.Rate) or -1
     self.data = data
 
     self.visible = true
 
-    self.children = {}
     self.moveWithScroll = true
 
     self:load(skin:format("notes/" .. tostring(states.game.Gameplay.mode) .. "K/note" .. data .. ".png"))
@@ -39,11 +31,15 @@ function HitObject:new(time, data, endTime)
     self.forcedDimensions = true
     self.dimensions = {width = 200, height = 200}
     self:updateHitbox()
+    self:centerOrigin()
     _G.__NOTE_OBJECT_WIDTH = 200
 
     self.x = self.x + (200) * (data-1)
 
+    self.hitsound = ""
+
     if self.endTime and self.endTime > self.time then
+        self.children = {}
         local holdObj = VertSprite():load(skin:format("notes/" .. tostring(states.game.Gameplay.mode) .. "K/note" .. data .. "-hold.png"))
         holdObj.endTime = self.endTime
         holdObj.length = self.endTime - self.time -- hold time
@@ -62,6 +58,7 @@ function HitObject:new(time, data, endTime)
 
         endObj.forcedDimensions = true
         endObj.dimensions = {width = 200, height = 100}
+        endObj.flipY = Modscript.downscroll == false
         endObj.parent = self
 
         endObj.hold = holdObj
@@ -72,9 +69,43 @@ function HitObject:new(time, data, endTime)
         table.insert(self.children, endObj)
     end
 
-    self.x = self.x + self.offsetX
+    self.type = 1
 
     return self
+end
+
+function HitObject:onHit()
+    local gameplayState = states.game.Gameplay
+    local foundSound = false
+
+    if self.hitsound:find("Whistle") then
+        foundSound = true
+        local clone = gameplayState.hitsounds["Whistle"]:clone()
+        clone:setVolume((Settings.options["Audio"].hitsound/100) * skinData.Miscellaneous.hitsoundVolume)
+        clone:play()
+        clone:release()
+    end
+    if self.hitsound:find("Finish") then
+        foundSound = true
+        local clone = gameplayState.hitsounds["Finish"]:clone()
+        clone:setVolume((Settings.options["Audio"].hitsound/100) * skinData.Miscellaneous.hitsoundVolume)
+        clone:play()
+        clone:release()
+    end
+    if self.hitsound:find("Clap") then
+        foundSound = true
+        local clone = gameplayState.hitsounds["Clap"]:clone()
+        clone:setVolume((Settings.options["Audio"].hitsound/100) * skinData.Miscellaneous.hitsoundVolume)
+        clone:play()
+        clone:release()
+    end
+
+    if not foundSound then
+        local clone = gameplayState.hitsounds["Default"]:clone()
+        clone:setVolume((Settings.options["Audio"].hitsound/100) * skinData.Miscellaneous.hitsoundVolume)
+        clone:play()
+        clone:release()
+    end
 end
 
 function HitObject:update(dt)
@@ -94,8 +125,10 @@ function HitObject:draw(scale)
     if not self.visible then return end
     
     if self.y < 1080/scale and self.y > -400 / scale then
-        for _, child in ipairs(self.children) do
-            child:draw()
+        if self.children then
+            for _, child in ipairs(self.children) do
+                child:draw()
+            end
         end
         self.super.draw(self)
     end

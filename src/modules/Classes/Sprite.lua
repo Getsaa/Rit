@@ -23,35 +23,6 @@ Sprite.x, Sprite.y = 0, 0
 
 Sprite.type = "Image"
 
-local function NewFrame(FrameName, X, Y, W, H, Sw, Sh, Ox, Oy, Ow, Oh) -- Creates a new frame for a sprite
-    local Aw, Ah = X + W, Y + H
-    local frame = {
-        name = FrameName,
-        quad = love.graphics.newQuad(X, Y, Aw > Sw and W - (Aw - Sw) or W, Ah > Sh and H - (Ah - Sh) or H, Sw, Sh),
-        width = Ow or W,
-        height = Oh or H,
-        offset = {x = Ox or 0, y = Oy or 0}
-    }
-    return frame
-end
-
-local function GetFrames(graphic, xmldata) -- Get's all the frames from an xml adobe sparrow
-    local frames = {graphic = graphic, frames = {}}
-    local sw, sh = graphic:getDimensions()
-    for _, frame in ipairs(xmldata) do
-        if frame.tag == "SubTexture" then
-            local name = frame.attr.name
-            local x, y = frame.attr.x, frame.attr.y
-            local w, h = frame.attr.width, frame.attr.height
-            local frameX, frameY = frame.attr.frameX, frame.attr.frameY
-            local frameW, frameH = frame.attr.frameWidth, frame.attr.frameHeight
-            table.insert(frames.frames, NewFrame(name, tonumber(x), tonumber(y), tonumber(w), tonumber(h), tonumber(sw), tonumber(sh), tonumber(frameX), tonumber(frameY), tonumber(frameW), tonumber(frameH)))
-        end
-    end
-
-    return frames
-end
-
 local Stencil = {
     sprite = {},
     x = 0,
@@ -102,6 +73,8 @@ function Sprite:new(x, y, graphic)
 
     self.type = "Image"
     self.addOrigin = true
+
+    self.zIndex = 0
 
     if graphic then self:load(graphic) end
 
@@ -215,15 +188,6 @@ end
 
 function Sprite:updateVertices(vertices)
     self.graphic:setVertices(vertices)
-end
-
-function Sprite:setFrames(xmlPath)
-    local data = xml.parse(xmlPath)
-    local frames = GetFrames(self.graphic, data)
-
-    self.frames = frames.frames
-    self.width, self.height = self:getFrameDimensions()
-    self:centerOrigin()
 end
 
 function Sprite:addAnimation(name, prefix, framerate, looped)
@@ -341,7 +305,11 @@ function Sprite:centerOffsets()
 end 
 
 function Sprite:centerOrigin()
-    self.origin = Point(self.width / 2, self.height / 2)
+    if self.forcedDimensions and self.dimensions then
+        self.origin = Point(self.dimensions.width / 2, self.dimensions.height / 2)
+    else
+        self.origin = Point(self.width / 2, self.height / 2)
+    end
 
     return self
 end

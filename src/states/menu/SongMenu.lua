@@ -17,9 +17,14 @@ local inSidebar = false
 local songTimer
 local typing = false
 local searchText = ""
-SongMenu.replays = {}
 
-local utf8 = require("utf8")
+local mouseDown = false
+local moveThresUp = -25 -- the amount of pixels the mouse has to move before dragging the song list
+local moveThresDown = 25
+local curMove = 0
+local didAMove = false
+
+SongMenu.replays = {}
 
 function SongMenu:enter()
     typing = false
@@ -75,7 +80,6 @@ function SongMenu:enter()
         local nps = nil
         for j, diff in pairs(song) do
             if type(diff) == "table" then
-                table.insert(diffs, diff)
                 songName = diff.title:trim()
                 bmType = diff.type
                 creator = diff.creator
@@ -83,7 +87,9 @@ function SongMenu:enter()
                 description = diff.description
                 tags = diff.tags
                 gamemode = diff.gameMode
+                keymode = diff.mode
                 nps = diff.nps
+                table.insert(diffs, diff)
             else
                 -- if diff is a key in songButtons, then don't set it
                 if songButtons[diff] then
@@ -143,17 +149,23 @@ function SongMenu:update(dt)
     end
     if state.inSubstate then return end
     if curTab == "songs" then
+        if input:pressed("randomSong") and not typing then
+            curSelected = love.math.random(1, #songButtons)
+        end
         curSelected = math.clamp(curSelected, 1, #songButtons)
         lerpedSongPos = math.fpsLerp(lerpedSongPos, (-(curSelected - 2.5)) * songButton.height * 0.75 + 250, 25, dt)
         if curButton then
             curButton.selected = false
         end
-        ---@class curButton : SongButton
+        ---@class curButton<SongButton>
         curButton = songButtons[curSelected]
         if curButton then
             curButton.selected = true
         end
     else
+        if input:pressed("randomSong") and not typing then
+            curSelected = love.math.random(1, #curButton.children)
+        end
         if curButton then
             curSelected = math.clamp(curSelected, 1, #curButton.children)
         else
@@ -163,7 +175,8 @@ function SongMenu:update(dt)
     end
 
     for i, bubble in ipairs(balls) do
-        bubble.ogX = bubble.ogX + math.sin((love.timer.getTime()*1000) / (100 * i)) * 0.05
+        --bubble.ogX = bubble.ogX + math.sin(time2 / 250 / i) * (12.5 * i) * dt
+        bubble.ogX = bubble.ogX + math.sin((love.timer.getTime()*1000) / 250 / i) * (12.5 * i) * dt
         -- velY is the speed of the bubble
         bubble.ogY = bubble.ogY - bubble.velY * dt
 
@@ -207,7 +220,7 @@ function SongMenu:update(dt)
                 curTab = "diffs"
                 lastCurSelected = curSelected
                 curSelected = 1
-                 curButton.open = true
+                curButton.open = true
 
                 -- songName and songDiff
                 self.songName = curButton.name
@@ -227,16 +240,17 @@ function SongMenu:update(dt)
             local folderpath = diff.folderPath
             local filename = diff.filename
             local diffName = diff.name
-            local mode = diff.mode
+            local gamemode = diff.gameMode
+
             love.filesystem.mount("songs/" .. filename, "song")
-            if chartver ~= "FNF" then
-                states.game.Gameplay.chartVer = chartver
-                states.game.Gameplay.songPath = songPath
-                states.game.Gameplay.folderpath = folderpath
-                states.game.Gameplay.difficultyName = diffName
-                states.game.Gameplay.rating = diff.nps
-                switchState(states.game.Gameplay, 0.3, nil)
-            end
+            
+            states.game.Gameplay.chartVer = chartver
+            states.game.Gameplay.songPath = songPath
+            states.game.Gameplay.folderpath = folderpath
+            states.game.Gameplay.difficultyName = diffName
+            states.game.Gameplay.gameMode = tonumber(gamemode)
+            states.game.Gameplay.songRating = math.clamp(0, diff.nps, 100)
+            switchState(states.game.Gameplay, 0.3, nil)
             MenuSoundManager:removeAllSounds()
         end
     elseif input:pressed("back") and not transitioning then
@@ -321,12 +335,79 @@ end
 
 function SongMenu:mousepressed(x, y, b)
     if state.inSubstate then return end
-    local x, y = toGameScreen(x-10, y)
+    local x, y = toGameScreen(x, y)
     local canc = Header:mousepressed(x, y, b)
+    __FORCE_MOUSERELEASED_CANCEL__ = canc
     if canc then return end
+
+    mouseDown = true
+end
+
+function SongMenu:mousemoved(x, y, dx, dy)
+    if mouseDown then
+        curMove = curMove + dy
+
+        if curMove < 0 then
+            if curMove <= moveThresUp then
+                if curTab == "songs" then
+                    curSelected = math.clamp(1, curSelected + 1, #songButtons)
+                    lastCurSelected = curSelected
+                    if songTimer then Timer.cancel(songTimer) end
+                    songTimer = Timer.after(1, function()
+                        if songButtons[lastCurSelected] then
+                            playSelectedSong(songButtons[lastCurSelected], songButtons[lastCurSelected].name)
+                        end
+                    end)
+                elseif curTab == "diffs" then
+                    if curButton then
+                        curSelected = math.clamp(1, curSelected + 1, #curButton.children)
+                        self.songName = curButton.name
+                        self.songDiff = curButton.children[curSelected].name
+                    else
+                        curSelected = 1
+                    end
+                end
+                curMove = 0
+                didAMove = true
+            end
+        elseif curMove > 0 then
+            if curMove >= moveThresDown then
+                if curTab == "songs" then
+                    curSelected = math.clamp(1, curSelected - 1, #songButtons)
+                    lastCurSelected = curSelected
+                    if songTimer then Timer.cancel(songTimer) end
+                    songTimer = Timer.after(1, function()
+                        if songButtons[lastCurSelected] then
+                            playSelectedSong(songButtons[lastCurSelected], songButtons[lastCurSelected].name)
+                        end
+                    end)
+                elseif curTab == "diffs" then
+                    if curButton then
+                        curSelected = math.clamp(1, curSelected - 1, #curButton.children)
+                        self.songName = curButton.name
+                        self.songDiff = curButton.children[curSelected].name
+                    else
+                        curSelected = 1
+                    end
+                end
+                curMove = 0
+                didAMove = true
+            end
+        end
+    end
+end
+
+function SongMenu:mousereleased(x, y, b)
+    if state.inSubstate then return end
+    local x, y = toGameScreen(x, y)
+    mouseDown = false
+    if didAMove then
+        didAMove = false
+        return
+    end
+
     if b == 1 then
         y = y - lerpedSongPos
-
         if searchCatTab:isHovered(x, y) and showCat then
             typing = not typing
         end
@@ -346,14 +427,13 @@ function SongMenu:mousepressed(x, y, b)
 
                             love.filesystem.mount("songs/" .. filename, "song")
                             
-                            if chartver ~= "FNF" then
-                                states.game.Gameplay.chartVer = chartver
-                                states.game.Gameplay.songPath = songPath
-                                states.game.Gameplay.folderpath = folderpath
-                                states.game.Gameplay.difficultyName = diffName
-                                states.game.Gameplay.gameMode = gamemode
-                                switchState(states.game.Gameplay, 0.3, nil)
-                            end
+                            states.game.Gameplay.chartVer = chartver
+                            states.game.Gameplay.songPath = songPath
+                            states.game.Gameplay.folderpath = folderpath
+                            states.game.Gameplay.difficultyName = diffName
+                            states.game.Gameplay.gameMode = tonumber(gamemode)
+                            states.game.Gameplay.songRating = math.clamp(0, diff.nps, 100)
+                            switchState(states.game.Gameplay, 0.3, nil)
                             MenuSoundManager:removeAllSounds()
                         else
                             curSelected = i
@@ -431,10 +511,10 @@ function SongMenu:draw()
             love.graphics.setColor(0, 0, 0, 0.25)
             -- Right side box
             love.graphics.rectangle("fill", 1920/1.15, 310, 1920/9, 425, 25, 25)
-            local nps = string.format("%.2f", curButton.nps or 0)
+            --[[ local nps = string.format("%.2f", curButton.nps or 0) -- Moved to  the diff tab
             love.graphics.setColor(1, 1, 1)
             setFont("menuExtraBold")
-            love.graphics.print("NPS: " .. nps, 1920/1.15+5, 315, 0, 1, 1)
+            love.graphics.print("NPS: " .. nps, 1920/1.15+5, 315, 0, 1, 1) ]]
 
             love.graphics.setColor(0, 0, 0, 0.6)
             -- Description box
@@ -443,6 +523,7 @@ function SongMenu:draw()
             love.graphics.setColor(1, 0.8, 0.8, 0.15)
             love.graphics.rectangle("fill", 1920/1.625, 275, 1920/2.74, 4, 10, 10)
             -- picture shadow
+            love.graphics.setColor(128/255, 34/255, 88/255, 0.3)
             love.graphics.rectangle("fill", 1920/1.1, 125, 125, 125, 10, 10)
 
             love.graphics.setColor(1, 1, 1)
@@ -504,7 +585,7 @@ function SongMenu:draw()
                 mapper = newString
             end
 
-            love.graphics.setColor(225/255, 105/255, 129/255)
+            love.graphics.setColor(225/255, 102/255, 133/255)
             love.graphics.print("Mapped by " .. (mapper or "Unknown"), 1920/1.625, 125 + 75, 0, 1, 1)
 
             setFont("NatsRegular26")
@@ -515,8 +596,119 @@ function SongMenu:draw()
         love.graphics.setFont(lastFont)
     end
 
-    --[[ if curTab == "diffs" then
-        --statsBox:draw()
+    if curTab == "diffs" then
+        local parent = curButton
+        local curButton = parent.children[curSelected]
+        local lastFont = love.graphics.getFont()
+        if curButton then
+            local name = (parent.name or "Unknown"):strip()
+            local artist = (parent.artist or "Unknown"):strip()
+            local mapper = (parent.creator or "Unknown"):strip()
+            local desc = (parent.description or "This map has no description."):strip()
+            local descLength = #desc:splitAllCharacters()
+            local maxLength = ("Hi this is testing a \"very long\" description in rit to see how it displays. Look off? Please report it. Description's should look no longer than this.")
+            if descLength > #maxLength:splitAllCharacters() then
+                desc = desc:sub(1, #maxLength) .. "..."
+            end
+            --1920/1.7, 85
+            love.graphics.setColor(0, 0, 0, 0.25)
+            -- Right side box
+            love.graphics.rectangle("fill", 1920/1.15, 310, 1920/9, 425, 25, 25)
+
+            love.graphics.setColor(1, 1, 1)
+
+            local nps = string.format("%.2f", curButton.nps or 0)
+            
+            setFont("menuExtraBold")
+            love.graphics.print("NPS: " .. nps, 1920/1.15+5, 315, 0, 1, 1)
+            local gameMode = states.game.Gameplay.gameModes[curButton.gameMode]
+            local offsetY = 0
+            if gameMode == "Mania" then
+                offsetY = 20
+                local keymode = tostring((tonumber(curButton.keyMode) or "?")) .. "k"
+                love.graphics.print("Keymode: " .. keymode, 1920/1.15+5, 335, 0, 1, 1)
+            end
+            love.graphics.print("Mode: " .. (gameMode or "Mania"), 1920/1.15+5, 335 + offsetY, 0, 1, 1)
+
+            love.graphics.setColor(0, 0, 0, 0.6)
+            -- Description box
+            love.graphics.rectangle("fill", 1920/1.625, 775, 1920/2.74, 235, 25, 25)
+
+            love.graphics.setColor(1, 0.8, 0.8, 0.15)
+            love.graphics.rectangle("fill", 1920/1.625, 275, 1920/2.74, 4, 10, 10)
+            -- picture shadow
+            love.graphics.setColor(128/255, 34/255, 88/255, 0.3)
+            love.graphics.rectangle("fill", 1920/1.1, 125, 125, 125, 10, 10)
+
+            love.graphics.setColor(1, 1, 1)
+            setFont("menuExtraBoldX2.5")
+
+            if fontWidth("menuExtraBoldX2.5", name) > 550 then
+                local newWidth = 0
+                local newString = ""
+                for i = 1, #name:splitAllCharacters() do
+                    local char = name:sub(i, i)
+                    newWidth = newWidth + fontWidth("menuExtraBoldX2.5", char)
+                    if newWidth > 550 then
+                        -- break, remove last 3, and add "..."
+                        newString = newString:sub(1, #newString - 3) .. "..."
+                        break
+                    else
+                        newString = newString .. char
+                    end
+                end
+                name = newString
+            end
+            love.graphics.print(name, 1920/1.625, 105, 0, 1, 1)
+
+            setFont("menuExtraBoldX1.5")
+            if fontWidth("menuExtraBoldX1.5", artist) > 400 then
+                local newWidth = 0
+                local newString = ""
+                for i = 1, #artist:splitAllCharacters() do
+                    local char = artist:sub(i, i)
+                    newWidth = newWidth + fontWidth("menuExtraBoldX1.5", char)
+                    if newWidth > 317 then
+                        newString = newString:sub(1, #newString - 3) .. "..."
+                        break
+                    else
+                        newString = newString .. char
+                    end
+                end
+                artist = newString
+            end
+
+            love.graphics.setColor(200/255, 80/255, 104/255)
+            love.graphics.print("By " .. (artist or "Unknown"), 1920/1.625, 125 + 40, 0, 1, 1)
+            
+            setFont("menuBoldX1.5")
+
+            if fontWidth("menuBoldX1.5", mapper) > 400 then
+                local newWidth = 0
+                local newString = ""
+                for i = 1, #mapper:splitAllCharacters() do
+                    local char = mapper:sub(i, i)
+                    newWidth = newWidth + fontWidth("menuBoldX1.5", char)
+                    if newWidth > 317 then
+                        newString = newString:sub(1, #newString - 3) .. "..."
+                        break
+                    else
+                        newString = newString .. char
+                    end
+                end
+                mapper = newString
+            end
+
+            love.graphics.setColor(225/255, 102/255, 133/255)
+            love.graphics.print("Mapped by " .. (mapper or "Unknown"), 1920/1.625, 125 + 75, 0, 1, 1)
+
+            setFont("NatsRegular26")
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.printf(desc, 1920/1.6, 800, 1920/4, "left", 0, 1.5, 1.5)
+        end
+
+        love.graphics.setFont(lastFont)
+        --[[ --statsBox:draw()
         love.graphics.setColor(0.5, 0.5, 0.5)
         love.graphics.setLineWidth(1)
         love.graphics.rectangle("fill", 900, 125, 920, 800, 5, 5)
@@ -549,8 +741,8 @@ function SongMenu:draw()
             end
         end
 
-        love.graphics.setLineWidth(1)
-    end ]]
+        love.graphics.setLineWidth(1) ]]
+    end
     love.graphics.push()
     setFont("menuBold")
     love.graphics.translate(0, lerpedSongPos)

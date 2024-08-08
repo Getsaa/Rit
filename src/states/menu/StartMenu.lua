@@ -108,6 +108,21 @@ local buttons = {
         action = function()
             love.event.quit()
         end
+    },
+    {
+        img = love.graphics.newImage("assets/images/ui/menu/buttons/lilCuteBtnOwo.png"),
+        text = "Login",
+        textX = 0,
+        textY = 0,
+        x = Inits.GameWidth - 500,
+        y = Inits.GameHeight/2 + 250,
+        scaleBorder = 1.25,
+        scale = 1.25,
+        color = {1, 1, 1},
+        down = false,
+        action = function()
+            switchState(states.screens.Auth.LoginScreen, 0.3)
+        end
     }
 }
 if curLocale == "es-LATAM" then
@@ -164,6 +179,8 @@ function StartMenu:enter()
         firstOpen = false
         playRandomSong() 
     end
+
+    
 end
 
 function StartMenu:update(dt)
@@ -225,7 +242,7 @@ function StartMenu:update(dt)
     end
 
     for i, bubble in ipairs(balls) do
-        bubble.ogX = bubble.ogX + math.sin(time2 / (100 * i)) * 0.05
+        bubble.ogX = bubble.ogX + math.sin(time2 / 250 / i) * (12.5 * i) * dt
         -- velY is the speed of the bubble
         bubble.ogY = bubble.ogY - bubble.velY * dt
 
@@ -280,6 +297,7 @@ function StartMenu:draw()
     for i = 1, #balls do
         balls[i]:draw()
     end
+
     love.graphics.push()
         love.graphics.scale(0.35, 0.35)
         love.graphics.setColor(1, 1, 1)
@@ -289,7 +307,7 @@ function StartMenu:draw()
     local lastColor = {love.graphics.getColor()}
     local lastFont = love.graphics.getFont()
     love.graphics.setColor(0, 0, 0, 0.13)
-    love.graphics.rectangle("fill", Inits.GameWidth - 695, Inits.GameHeight/2 - 300, 650, 570, 75, 75)
+    love.graphics.rectangle("fill", Inits.GameWidth - 695, Inits.GameHeight/2 - 300, 650, 670, 75, 75)
     setFont("menuBold")
     for i = 1, #buttons do
         local x, y = buttons[i].x, buttons[i].y

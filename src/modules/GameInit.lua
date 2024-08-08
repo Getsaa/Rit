@@ -11,12 +11,8 @@ function GI.LoadLibraries()
     tinyyaml = require("lib.tinyyaml")
     ini = require("lib.ini")
     clone = require("lib.clone")
-    threads = {
-        assets = require("lib.loveloader")
-    }
-    xml = require("lib.xml")
+    threadLoader = require("lib.loveloader")
     require("lib.lovefs.lovefs")
-    require("lib.luafft")
     if love.system.getOS() == "Windows" then
         windowUtil = require("lib.windows.window")
         windowUtil.setDarkMode(true)
@@ -25,7 +21,7 @@ function GI.LoadLibraries()
         Video = require("lib.aqua.Video")
 
         networking = {}
-        if Steam and Inits.networkingEnabled then
+        if Steam and Inits.NetworkingEnabled then
             noobhub = require("lib.networking.noobhub")
             networking = {
                 latencies = {},
@@ -43,7 +39,7 @@ function GI.LoadLibraries()
             networking.connected = networking.hub:subscribe({
                 channel = "main-channel",
                 callback = function(message)
-                    if message and (type(message) == "string" or type(message) == "number" or type(message) == "boolean") then
+                    if type(message) ~= "table" then 
                         return
                     end
                     --print("Received message: " .. json.encode(message))
@@ -109,7 +105,6 @@ function GI.LoadLibraries()
                         if networking.currentServerID and message.id == networking.currentServerData.id then
                             networking.inMultiplayerGame = true
                             local song = getSongFromNameAndDiff(networking.currentServerData.currentSong.songName, networking.currentServerData.currentSong.songDiff)
-                            --print("Starting game with song: " .. tostring(song))
                             local songPath = song.path
                             local chartVer = song.type
                             local folderPath = song.folderPath
@@ -122,7 +117,9 @@ function GI.LoadLibraries()
                             states.game.Gameplay.songPath = songPath
                             states.game.Gameplay.folderpath = folderPath
                             states.game.Gameplay.difficultyName = diffName
+                            states.game.Gameplay.songRating = math.clamp(0, song.nps, 100)
                             switchState(states.game.Gameplay, 0.3, nil)
+                            MenuSoundManager:removeAllSounds()
 
                             networking.hub:publish({
                                 message = {
@@ -181,9 +178,12 @@ function GI.LoadClasses()
     VertSprite = require("modules.Classes.VertSprite")
     SoundManager = require("modules.Classes.SoundManager")
     require("modules.Game.SongHandler")
-    NoteHelper = require("modules.Game.NoteHelper")
     Settings = require("modules.Game.Settings")
+    Modifiers = require("modules.Game.Modifiers")
     Settings.loadOptions()
+    setFpsCapFromSetting()
+    love.window.setWindowSize(Settings.options["Video"].Width, Settings.options["Video"].Height)
+    love.resize(Settings.options["Video"].Width, Settings.options["Video"].Height)
     Modscript = require("modules.Game.Modding.Modscript")
     SearchAlgorithm = require("modules.Game.Helpers.SearchAlgorithm")
     SaveUserData = require("modules.Game.Helpers.SaveUserData")
@@ -268,7 +268,16 @@ function GI.LoadClasses()
     end
     
     -- API Stuff
-    --RequestJsonData = require("modules.API.RequestJsonData")
+    RequestJsonData = require("modules.API.RequestJsonData")
+    StorageAPI = require("modules.API.StorageAPI")
+    require("modules.API")
+    if love.filesystem.getInfo("data/userinfo.dat") then
+        API:LoginUserFromSavedInfo()
+        API.CurrentUserAvatar = love.graphics.newImage(API:GetCurrentUserAvatar())
+    end
+    
+    --[[ StorageAPI.downloadTestSong() ]]
+    
 end
 
 function GI.LoadShaders()
@@ -290,24 +299,38 @@ function GI.ClearOSModule()
 end
 
 function GI.LoadObjects()
+    -- Mania
     StrumObject = require("modules.Objects.game.Mania.StrumObject")
     HitObject = require("modules.Objects.game.Mania.HitObject")
-    Playfield = require("modules.Objects.game.Mania.Playfield")
+    CatchObject = require("modules.Objects.game.Mania.CatchObject")
+    Playfield = require("modules.Objects.game.Playfield")
     TimingLine = require("modules.Objects.game.Mania.TimingLine")
+    HitTimeLine = require("modules.Objects.game.Mania.HitTimeLine")
+
+    -- Taiko
+    TaikoObject = require("modules.Objects.game.Taiko.TaikoObject")
 
     SongButton = require("modules.Objects.menu.SongButton")
     ServerButton = require("modules.Objects.menu.ServerButton")
-    Spectrum = require("modules.Objects.menu.Spectrum")
 
     HeaderButton = require("modules.Objects.menu.HeaderButton")
     Header = require("modules.Objects.menu.Header")
     Header.userData = _USERDATA
     Switch = require("modules.Objects.menu.options.Switch")
+    Slider = require("modules.Objects.menu.options.Slider")
+    Dropdown = require("modules.Objects.menu.options.Dropdown")
 
-    FPSOverlay = require("modules.Objects.overlay.FPSOverlay") {
+    OverlayObject = require("modules.Objects.overlay.OverlayObject")
+    FPSOverlay = OverlayObject({
         x = Inits.GameWidth - 85,
-        y = Inits.GameHeight - 35
-    }
+        y = Inits.GameHeight - 65,
+        formatReplacement = 0
+    }, "FPS: %d")
+    dtOverlay = OverlayObject({
+        x = Inits.GameWidth - 85,
+        y = Inits.GameHeight - 35,
+        formatReplacement = 0
+    }, "%.1fms")
 end
 
 function GI.LoadParsers()
@@ -338,28 +361,11 @@ function GI.LoadThreads()
 end
 
 function GI.LoadDefaultFonts()
-    Cache.members.font["default"] = love.graphics.newFont("assets/fonts/Montserrat-Light.ttf", 16)
-    Cache.members.font["defaultX0.75"] = love.graphics.newFont("assets/fonts/Montserrat-Light.ttf", 12)
-    Cache.members.font["defaultBold"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 16)
-    Cache.members.font["defaultBoldX1.25"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 20)
-    Cache.members.font["defaultBoldX1.5"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 24)
-    Cache.members.font["defaultBoldX2"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 32)
-    Cache.members.font["defaultBoldX2.5"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 48)
-    Cache.members.font["menu"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 32)
-    Cache.members.font["menuBold"] = love.graphics.newFont("assets/fonts/Montserrat-Bold.ttf", 22)
-    Cache.members.font["menuExtraBold"] = love.graphics.newFont("assets/fonts/Montserrat-ExtraBold.ttf", 22)
-    Cache.members.font["menuExtraBoldX1.5"] = love.graphics.newFont("assets/fonts/Montserrat-ExtraBold.ttf", 33)
-    Cache.members.font["menuExtraBoldX2"] = love.graphics.newFont("assets/fonts/Montserrat-ExtraBold.ttf", 44)
-    Cache.members.font["menuExtraBoldX2.5"] = love.graphics.newFont("assets/fonts/Montserrat-ExtraBold.ttf", 55)
-    Cache.members.font["menuExtraBoldX3"] = love.graphics.newFont("assets/fonts/Montserrat-ExtraBold.ttf", 66)
-    Cache.members.font["menuX1.5"] = love.graphics.newFont("assets/fonts/Montserrat-Light.ttf", 33)
-    Cache.members.font["menuBoldX1.5"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 33)
-    Cache.members.font["menuBig"] = love.graphics.newFont("assets/fonts/Montserrat-Light.ttf", 64)
-    Cache.members.font["menuBigBold"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 64)
-    Cache.members.font["menuMedium"] = love.graphics.newFont("assets/fonts/Montserrat-Light.ttf", 48)
-    Cache.members.font["menuMediumBold"] = love.graphics.newFont("assets/fonts/Montserrat-Medium.ttf", 48)
-    Cache.members.font["NatsRegular26"] = love.graphics.newFont("assets/fonts/NATS-Regular.otf", 26)
-    Cache.members.font["NatsRegular16"] = love.graphics.newFont("assets/fonts/NATS-Regular.otf", 16)
+    local fontsData = love.filesystem.load("modules/Data/Fonts.lua")()
+
+    for _, fontInfo in ipairs(fontsData) do
+        Cache.members.font[fontInfo.name] = love.graphics.newFont("assets/fonts/" .. fontInfo.path, fontInfo.size or 12)
+    end
 
     -- some font functions
     function setFont(font)
@@ -397,7 +403,7 @@ function GI.LoadStates()
             MapEditorScreen = require("states.screen.MapEditorScreen"),
             Importers = {
                 QuaverImportScreen = require("states.screen.Importers.QuaverImportScreen"),
-                OsuImportScreen = require("states.screen.Importers.OsuImportScreen"),
+                --[[ OsuImportScreen = require("states.screen.Importers.OsuImportScreen"), ]] -- Read file for information on why this is unused.
                 fluXisImportScreen = require("states.screen.Importers.fluXisImportScreen"),
             },
             Jukebox = require("states.screen.JukeboxScreen"),
@@ -406,6 +412,9 @@ function GI.LoadStates()
             },
             game = {
                 ResultsScreen = require("states.screen.Game.ResultsScreen")
+            },
+            Auth = {
+                LoginScreen = require("states.screen.Auth.LoginScreen")
             }
         }
     }
@@ -417,7 +426,6 @@ function GI.LoadSubstates()
             Pause = require("substates.game.Pause"),
         },
         menu = {
-            Options = require("substates.menu.Options")
         }
     }
 end
@@ -449,12 +457,23 @@ function GI.InitSteam()
                 SteamUserAvatarLarge = love.graphics.newImage(SteamUserImgSteamData)
             end
         end
-    end 
+    end
 end
 
 function GI.UpdateDiscord()
     if discordRPC then
         if discordRPC.presence then
+            -- Safe guards to not make discordRPC crash if our details/state are too long
+            if (#discordRPC.presence.state or "") > 127 then
+                discordRPC.presence.state = string.sub(discordRPC.presence.state, 1, 124) .. "..."
+            end
+            if (#discordRPC.presence.details or "") > 127 then
+                discordRPC.presence.details = string.sub(discordRPC.presence.details, 1, 124) .. "..."
+            end
+            discordRPC.presence.button1Label = discordRPC.presence.button1Label or "GitHub"
+            discordRPC.presence.button1Url = discordRPC.presence.button1Url or "https://github.com/AGORI-Studios/Rit"
+            --
+
             discordRPC.updatePresence(discordRPC.presence)
         end
         discordRPC.runCallbacks()
@@ -475,7 +494,10 @@ function GI.CreateFolders()
     if not love.filesystem.getInfo(".cache/.songs") then
         love.filesystem.createDirectory(".cache/.songs")
     end
-end 
+    if not love.filesystem.getInfo(".cache/.web") then
+        love.filesystem.createDirectory(".cache/.web")
+    end
+end
 
 -- Love Functions
 function love.wheelmoved(x, y)
@@ -483,25 +505,37 @@ function love.wheelmoved(x, y)
 
     if love.keyboard.isDown("lalt") then
         masterVolume = masterVolume + y * 5
+
+        masterVolume = math.clamp(masterVolume, 0, 100)
+        _AUDIOSLIDER.timer = _AUDIOSLIDER.timerMax
+        _AUDIOSLIDER.visible = true
+        Settings.options["Audio"].global = masterVolume
+        if GLOBAL_slider then
+            GLOBAL_slider.value = Settings.options["Audio"].global
+        end
     end
-    masterVolume = math.clamp(masterVolume, 0, 100)
-    Settings.options["General"].globalVolume = masterVolume / 100
 end
 
 function love.mousepressed(x, y, b, istouch, presses)
     if istouch then return end
     state.mousepressed(x, y, b)
+    _AUDIOSLIDER:mousepressed(toGameScreen(x, y))
     --currentController:touchpressed(0, x, y, 0, 0, 0)
 end
 
 function love.mousereleased(x, y, b, istouch, presses)
-    if istouch then return end
+    if istouch or __FORCE_MOUSERELEASED_CANCEL__ then 
+        __FORCE_MOUSERELEASED_CANCEL__ = false
+        return 
+    end
     state.mousereleased(x, y, b)
+    _AUDIOSLIDER:mousereleased(toGameScreen(x, y))
     --currentController:touchreleased(0, x, y, 0, 0, 0)
 end
 
 function love.mousemoved(x, y, dx, dy, istouch)
     state.mousemoved(x, y, dx, dy, istouch)
+    _AUDIOSLIDER:mousemoved(toGameScreen(x, y))
     --currentController:touchmoved(0, x, y, dx, dy, 0)
 end
 
@@ -856,6 +890,16 @@ end
 
 function love.setFpsCap(fps)
     love._fps_cap = fps or 500
+end
+
+function setFpsCapFromSetting()
+    --[[ if Settings.options["Video"].FPS == "500" then
+        love.setFpsCap(500)
+    elseif Settings.options["Video"].FPS == "Unlimited" then
+        -- I lied, its just 1000fps
+        love.setFpsCap(1000)
+    end ]]
+    love.setFpsCap(tonumber(Settings.options["Video"].FPS) or 1000)
 end
 
 -- End of Love Functions

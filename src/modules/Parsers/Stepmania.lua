@@ -45,7 +45,6 @@ function stepmaniaLoader.getDifficulties(path)
                             isDanceSingle = false
                         end
                     end
-                    
 
                     if metaIndex == 2 then
                         line = line:gsub("\t", ""):gsub(":", ""):trim()
@@ -82,8 +81,8 @@ function stepmaniaLoader.getDifficulties(path)
     return notes
 end
 
----@param number time
 --- Gets the current bpm from the notes ms time
+---@param time number
 local function getCurBPM(time)
     local cur = nil
 
@@ -111,7 +110,9 @@ function stepmaniaLoader.load(chart, folderPath, diffName, forNPS)
     local chart = love.filesystem.read(chart)
 
     states.game.Gameplay.mode = 4
-    states.game.Gameplay.strumX = states.game.Gameplay.strumX - ((states.game.Gameplay.mode - 4.5) * (100 + Settings.options["General"].columnSpacing))
+    if not forNPS then
+        states.game.Gameplay.strumX = states.game.Gameplay.strumX - ((states.game.Gameplay.mode - 4.5) * (100 + Settings.options["General"].columnSpacing))
+    end
     
     local bpms = {}
     local stops = {}
@@ -163,6 +164,7 @@ function stepmaniaLoader.load(chart, folderPath, diffName, forNPS)
         end
 
         if inBpms then
+            ---@diagnostic disable-next-line: param-type-mismatch
             line = string.gsub(line, "#BPMS:", ""):trim()
 
             ---@diagnostic disable-next-line: param-type-mismatch
@@ -187,6 +189,7 @@ function stepmaniaLoader.load(chart, folderPath, diffName, forNPS)
         end
 
         if inStops then
+            ---@diagnostic disable-next-line: param-type-mismatch
             line = string.gsub(line, "#STOPS:", ""):trim()
 
             ---@diagnostic disable-next-line: param-type-mismatch
@@ -214,6 +217,7 @@ function stepmaniaLoader.load(chart, folderPath, diffName, forNPS)
             if not string.endsWith(path, ".ssc") then
                 if line:find(":") then
                     -- check if its the correct difficulty
+                    ---@diagnostic disable-next-line: param-type-mismatch
                     local diff = line:sub(1, #line - 1):trim()
                     if diff == "dance-double" then
                         inCorrectDiff = false
@@ -233,6 +237,7 @@ function stepmaniaLoader.load(chart, folderPath, diffName, forNPS)
             ::continue1::
 
             if inCorrectDiff and not line:find(":") then                
+                ---@diagnostic disable-next-line: param-type-mismatch
                 if string.startsWith(line, ",") then
                     table.insert(measures, {})
                     goto continue
@@ -244,6 +249,7 @@ function stepmaniaLoader.load(chart, folderPath, diffName, forNPS)
             end
         else
             if line:find("#DIFFICULTY:") then
+                ---@diagnostic disable-next-line: param-type-mismatch
                 local diff = line:gsub("\t", ""):gsub("#DIFFICULTY:", ""):trim()
                 if diff == diffName then 
                     inCorrectDiff = true

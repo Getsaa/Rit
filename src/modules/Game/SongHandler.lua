@@ -23,10 +23,14 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                         local Tags = string.split(data[7], ", ")
                         local bpm = data[8]
                         local previewTime = data[9]
-                        local gamemode = data[10]
+                        local stripped = tostring(data[10]):strip()
+                        local gamemode = tonumber(stripped)
                         local mapID = data[11]
                         local nps = data[12]
                         local maptype = data[13]
+
+                        if gamemode == -1 then goto __EndLoop__ end
+
                         data = {
                             title = title,
                             difficultyName = difficultyName,
@@ -50,7 +54,7 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                             createSongCache(data, ".cache/.songs/" .. file .. song .. ".cache") -- re-cache it with the nps
                         end
 
-                        print("Parsing default song cache file") -- THIS HAS TO BE HERE BECAUSE IT LOADS THEM TOO QUICKLY GRAHHHHH
+                        print("Parsing non-packaged song cache") -- THIS HAS TO BE HERE BECAUSE IT LOADS THEM TOO QUICKLY GRAHHHHH
                         
                         songList[title..mapID] = songList[title..mapID] or {}
                         songList[title..mapID][difficultyName] = {
@@ -178,7 +182,8 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
 
                         local Mode = fileData:match("Mode:(.-)\r?\n"):trim()
                         if Mode ~= "3" and Mode ~= "1" then goto continue end
-                        local nps = Parsers["osu!"].load(path .."/" .. file .. "/" .. song, path .."/" .. file, difficultyName, true)
+
+                        local nps = Parsers["osu!"].load(path .."/" .. file .. "/" .. song, path .."/" .. file, difficultyName, true, tonumber(Mode))
                         songList[title..mapID] = songList[title..mapID] or {}
                         songList[title..mapID][difficultyName] = {
                             filename = file,
@@ -194,7 +199,7 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                             bpm = bpm,
                             previewTime = tonumber(previewTime or 0),
                             audioFile = path .."/" .. file .. "/" .. AudioFile,
-                            gameMode = Mode == "3" and 1 or Mode == "1" and 2 or 1,
+                            gameMode = Mode == "3" and 1 or Mode == "1" and 2,
                             mapID = mapID,
                             mode = keys
                         }
@@ -299,7 +304,7 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                                 break
                             end
                         end
-                        local previewTime = filedata.Metadata.PreviewTime
+                        local previewTime = filedata.Metadata.PreviewTime or 0
                         local nps = Parsers["fluXis"].load(path .."/" .. file .. "/" .. song, path .."/" .. file, difficultyName, true)
                         Tags = Tags:split(" ")
                         songList[title..mapID] = songList[title..mapID] or {}
@@ -333,7 +338,6 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                         for _, diff in pairs(diffs) do
                             local alreadyInList = false
                             for _, song in ipairs(songList) do
-                                print(song.title, diff.songName, song.difficultyName, diff.name)
                                 if song.title == diff.songName and song.difficultyName == diff.name then
                                     alreadyInList = true
                                 end
@@ -404,7 +408,7 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                     }
                     -- tags is already a table in the cache
 
-                    print("Parsing non-default song cache files")
+                    print("Parsing packaged song cache files")
 
                     if (data.nps or 0) == 0 then
                         local nps = Parsers[data.type].load("song/" .. song, "song", difficultyName, true)
@@ -537,7 +541,7 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                     Tags = Tags:split(" ")
                     if Mode ~= "3" and Mode ~= "1" then goto continue end
 
-                    local nps = Parsers["osu!"].load("song/" .. song, "song", difficultyName, true)
+                    local nps = Parsers["osu!"].load("song/" .. song, "song", difficultyName, true, tonumber(Mode))
 
                     songList[title..mapID] = songList[title..mapID] or {}
                     songList[title..mapID][difficultyName] = {
@@ -555,7 +559,7 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                         bpm = bpm,
                         previewTime = tonumber(previewTime or 0),
                         audioFile = "song/" .. AudioFile,
-                        gameMode = Mode == "3" and 1 or Mode == "1" and 2 or 1,
+                        gameMode = Mode == "3" and 1 or Mode == "1" and 2,
                         mapID = mapID,
                         mode = keys
                     }
@@ -606,6 +610,48 @@ function loadSongs(path) -- Gross yucky way of loading all of our songs in the g
                     }
 
                     createSongCache(songList[title..mapID][difficultyName], ".cache/.songs/" .. file .. song .. ".cache")
+                elseif ext == "ritc" then
+                    local fileData = lf.read("song/" .. song)
+                    local title = fileData:match("SongTitle:(.-)\r?\n")
+                    local difficultyName = fileData:match("SongDiff:(.-)\r?\n")
+                    local AudioFile = fileData:match("AudioFile:(.-)\r?\n"):trim()
+                    local Creator = fileData:match("Creator:(.-)\r?\n")
+                    local Artist = fileData:match("Artist:(.-)\r?\n")
+                    local description = fileData:match("Description:(.-)\r?\n")
+                    local Tags = fileData:match("Tags:(.-)\r?\n"):strip()
+                    local bpm = fileData:match("%[Timings%]\r?\n(.-)\r?\n%[Hits%]")
+                    local previewTime = fileData:match("PreviewTime:(.-)\r?\n"):trim()
+                    local mapID = tonumber(fileData:match("MapID:(%d+)\r?\n"))
+                    local Mode = tonumber(fileData:match("KeyAmount:(%d+)\r?\n"))
+                    bpm = bpm:split("\r?\n")
+                    bpm = bpm[1]:split(":")[2]
+                    Tags = Tags:split(" ")
+
+                    local nps = Parsers["Rit"].load("song/" .. song, path .."/" .. file, difficultyName, true)
+
+                    songList[title..mapID] = songList[title..mapID] or {}
+                    songList[title..mapID][difficultyName] = {
+                        filename = file,
+                        title = title,
+                        difficultyName = difficultyName,
+                        path = "song/" .. song,
+                        folderPath = path .."/" .. file,
+                        type = "Rit",
+                        nps = nps,
+                        creator = Creator,
+                        artist = Artist,
+                        description = description,
+                        tags = Tags,
+                        bpm = bpm,
+                        previewTime = tonumber(previewTime or 0),
+                        audioFile = "song/" .. AudioFile,
+                        gameMode = 1,
+                        mapID = mapID,
+                        mode = Mode
+                    }
+                    songList[title..mapID].type = "Rit"
+
+                    createSongCache(songList[title..mapID][difficultyName], ".cache/.songs/" .. file .. song .. ".cache")
                 end
 
                 ::__EndLoop__::
@@ -644,9 +690,9 @@ function createSongCache(data, path)
 %d
 %d
 %d
-%s]], data.title, data.difficultyName, data.mode, data.creator, 
-    data.audioFile, data.artist, table.concate(data.tags, " "),
-    data.bpm, data.previewTime, data.gameMode, data.mapID, data.nps, data.type
+%s]], data.title or "UNKNOWN", data.difficultyName or "UNKNOWN", data.mode or 4, data.creator or "UNKNOWN", 
+    data.audioFile, data.artist or "UNKNOWN", table.concate(data.tags or {}, " "),
+    data.bpm or 120, data.previewTime or 0, data.gameMode or 1, data.mapID or 1, data.nps or 0, data.type or "Quaver"
 ))
 
     return success
@@ -697,7 +743,7 @@ function updateAudioThread()
     if channel:peek() then
         local soundData = channel:pop()
         MenuSoundManager:newSound("music", soundData, 1, true, "stream")
-        MenuSoundManager:playFromTime("music", (curDiff.previewTime or 0) / 1000)
+        MenuSoundManager:playFromTime("music", (math.abs(curDiff.previewTime) or 0) / 1000)
         MenuSoundManager:setLooping("music", true)
     end
 end
@@ -705,7 +751,7 @@ end
 function playSelectedSong(song, songName)
     if songName == (curPlayingSong or "") then return end
     curPlayingSong = songName
-    if not song or not song.children then return end
+    if not song or not song.children ~= nil then return end
     local diff = table.random(song.children)
 
     if not diff then return end
@@ -726,12 +772,10 @@ function playSelectedSong(song, songName)
 end
 
 function getSongFromNameAndDiff(name, diff)
-    for songName, song in pairs(songList) do
-        if songName == name then
-            for diffName, diffData in pairs(song) do
-                if diffName == diff then
-                    return diffData
-                end
+    for _, song in pairs(songList) do
+        for diffName, diffData in pairs(song) do
+            if diffName:strip() == diff:strip() and diffData.title == name then
+                return diffData
             end
         end
     end
@@ -770,8 +814,8 @@ function loadReplays()
 end
 
 --[[ function getSongReplays()
-    threads.assets.loadReplays(_G, "___REPLAYS")
-    threads.assets.start(function()
+    threadLoader.loadReplays(_G, "___REPLAYS")
+    threadLoader.start(function()
         states.menu.SongMenu.replays = _G.___REPLAYS
     end)
 end ]]

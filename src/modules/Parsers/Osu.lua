@@ -3,6 +3,9 @@ local osuLoader = {}
 local currentBlockName = ""
 local folderPath
 local forNPS
+local mode
+
+local noteCount, endNoteTime = 0, 0
 
 local eases = {
     "linear",               -- 0  Linear: no easing
@@ -66,7 +69,8 @@ local function splitAndReplaceWithNull(line, delimiter)
     return result
 end
 
-function osuLoader.load(chart, folderPath_, diffName, _forNPS)
+function osuLoader.load(chart, folderPath_, diffName, _forNPS, _mode)
+    noteCount, endNoteTime = 0, 0
     currentBoardObject = nil
     states.game.Gameplay.unspawnNotes = {}
     states.game.Gameplay.timingPoints = {}
@@ -77,6 +81,7 @@ function osuLoader.load(chart, folderPath_, diffName, _forNPS)
     curChart = "osu!"
     folderPath = folderPath_
     currentBlockName = ""
+    mode = _mode
 
     local storyboard = nil
 
@@ -101,20 +106,11 @@ function osuLoader.load(chart, folderPath_, diffName, _forNPS)
     chart = nil 
 
     if forNPS then
-        local noteCount = #states.game.Gameplay.unspawnNotes
-        local songLength = 0
-        local endNote = states.game.Gameplay.unspawnNotes[#states.game.Gameplay.unspawnNotes]
-        if endNote.endTime ~= nil and endNote.endTime ~= 0 and endNote.endTime ~= endNote.time then
-            songLength = endNote.endTime
-        else
-            songLength = endNote.time
-        end
-
         states.game.Gameplay.unspawnNotes = {}
         states.game.Gameplay.timingPoints = {}
         states.game.Gameplay.sliderVelocities = {}
 
-        return noteCount / (songLength / 1000)
+        return noteCount / (endNoteTime / 1000)
     end
 
     --[[ if storyboard then
@@ -152,8 +148,9 @@ function osuLoader.processLine(line)
 end
 
 function osuLoader.processDifficulty(line)
+    if forNPS then return end
     local key, value = line:match("^(%a+):%s?(.*)")
-    if key == "CircleSize" and states.game.Gameplay.gameMode == 1 then
+    if key == "CircleSize" and mode == 1 then
         states.game.Gameplay.mode = tonumber(value)
         states.game.Gameplay.strumX = states.game.Gameplay.strumX - ((states.game.Gameplay.mode - 4.5) * (100 + Settings.options["General"].columnSpacing))
     end
@@ -365,6 +362,7 @@ function osuLoader.processEvent(line)
     end
 end
 function osuLoader.addTimingPoint(line)
+    if forNPS then return end
     local split = line:split(",")
     local tp = {}
 
@@ -400,12 +398,17 @@ function osuLoader.addTimingPoint(line)
 
     if isSV then
         local velocity = {
-            startTime = tp.offset,
+            startTime = tp.offset / Modifiers.Rate,
             multiplier = tp.velocity or 0
         }
         table.insert(states.game.Gameplay.sliderVelocities, velocity)
     else
-        if not _bpm then _bpm = 60000/tp.beatLength; bpm = _bpm end
+        print("CALLED")
+        if not _bpm then
+            _bpm = 60000/tp.beatLength
+            bpm = _bpm
+            states.game.Gameplay.soundManager:setBPM("music", (bpm or 120))
+        end
         table.insert(states.game.Gameplay.timingPoints, {
             StartTime = tp.offset,
             Bpm = 60000/tp.beatLength
@@ -432,14 +435,16 @@ function osuLoader.addHitObject(line)
     note.x = tonumber(split[1]) or 0
     note.y = tonumber(split[2]) or 0
     note.startTime = tonumber(split[3]) or 0
-    if states.game.Gameplay.gameMode == 2 then
+    if mode == 2 then
         states.game.Gameplay.mode = 2
         if bit.band(tonumber(split[5]) or 0, 10) ~= 0 then
             note.data = 2
         else
             note.data = 1
         end
-    else
+        note.isBig = bit.band(tonumber(split[5] or 0), 4) ~= 0
+        print("I AM SO CONFUSED")
+    elseif mode == 1 then
         note.data = math.max(1, math.min(states.game.Gameplay.mode, math.floor(note.x/512*states.game.Gameplay.mode+1))) or 1
     end
 
@@ -463,9 +468,20 @@ function osuLoader.addHitObject(line)
 
     if doAprilFools and Settings.options["Events"].aprilFools then note.data = 1; states.game.Gameplay.mode = 1 end
 
-    local ho = HitObject(note.startTime, note.data, note.endTime)
+    if not forNPS then
+        local ho-- = HitObject(note.startTime, note.data, note.endTime)
+        if mode == 2 then
+            ho = TaikoObject(note.startTime, note.data, note.isBig)
+            print("HUH")
+        elseif mode == 1 then
+            ho = HitObject(note.startTime, note.data, note.endTime)
+        end
+        table.insert(states.game.Gameplay.unspawnNotes, ho)
+    else
+        noteCount = noteCount + 1
+        endNoteTime = ((note.endTime and note.endTime ~= 0) and note.endTime) or note.startTime
+    end
 
-    table.insert(states.game.Gameplay.unspawnNotes, ho)
 end
 
 function osuLoader.convertToPlayfield(x, y)

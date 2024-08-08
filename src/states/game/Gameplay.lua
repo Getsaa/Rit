@@ -1,6 +1,6 @@
 local Gameplay = state()
 
-Gameplay.strumX = 525
+Gameplay.strumX = 500
 
 Gameplay.spawnTime = 3000
 
@@ -23,7 +23,6 @@ Gameplay.members2 = {} -- judgements, combo, etc
 
 Gameplay.chartType = ""
 
-Gameplay.trackRounding = 100
 Gameplay.initialScrollVelocity = 1
 Gameplay.velocityPositionMakers = {}
 
@@ -60,10 +59,16 @@ Gameplay.allJudgements = {}
 
 Gameplay.gameModes = {
     "Mania",
+    "Taiko",
     "TBD"
 }
+Gameplay.gameMode = 1
 
 Gameplay.eventTimers = {}
+
+Gameplay.playfieldVertSprites = {}
+
+Gameplay.playfieldsCanvas = love.graphics.newCanvas(1920, 1080)
 
 local lerpedScore = 0
 local lerpedAccuracy = 0
@@ -92,13 +97,14 @@ function Gameplay:reset()
     lerpedScore, lerpedAccuracy, lerpedRating = 0, 0, 0
     -- Reset all variables to their default values
     self.lastNoteIsFinish = true
-    self.strumX = 525
+    self.strumX = 500
     self.spawnTime = 1000
     self.hitObjects = Group()
     self.timingLines = Group()
     self.unspawnNotes = {}
     self.sliderVelocities = {}
     self.strumLineObjects = Group()
+    self.hitTimeLines = Group()
     self.songPercent = 0
     self.updateTime = false
     self.endingSong = false
@@ -111,11 +117,18 @@ function Gameplay:reset()
     self.didTimer = false
     self.objectKillOffset = 350
     self.inputsArray = {false, false, false, false}
-    self.hitsound = love.audio.newSource(skin:format("hitsound.wav"), "static")
-    self.hitsound:setVolume(0.1)
+    --[[ self.hitsound = love.audio.newSource(skin:format("hitsound.wav"), "static")
+    self.hitsound:setVolume(0.1) ]]
+    self.hitsounds = {
+        ["Default"] = love.audio.newSource(skin:format("sounds/sound-hit.wav"), "static"),
+        ["Whistle"] = love.audio.newSource(skin:format("sounds/sound-hitwhistle.wav"), "static"),
+        ["Finish"] = love.audio.newSource(skin:format("sounds/sound-hitfinish.wav"), "static"),
+        ["Clap"] = love.audio.newSource(skin:format("sounds/sound-hitclap.wav"), "static")
+    }
     self.judgement = nil
     self.comboGroup = Group()
     self.combo = 0
+    self.maxCombo = 0
     self.initialScrollVelocity = 1
     self.velocityPositionMakers = {}
     self.currentSvIndex = 1
@@ -130,11 +143,22 @@ function Gameplay:reset()
     self.noteScore = 0
     self.soundManager = SoundManager()
     self.playfields = {}
+    Gameplay.playfieldVertSprites = {}
     self.hits = 0
     self.misses = 0
     self.lastNoteTime = 10000 -- safe number
     self.firstNoteTime = 0
     self.hasSkipPeriod = false
+    self.hitTimings = {}
+
+    self.curShader = ""
+    self.shaderList = {
+    }
+    if love.graphics.getSupportedShader() then
+        self.shaderList = {
+            ["Split"] = love.graphics.newShader("shaders/Split.glsl")
+        }
+    end
 
     self.storyBoardSprites = {
         Background = Group(),
@@ -143,7 +167,6 @@ function Gameplay:reset()
         Foreground = Group()
     }
 
-    self.songRating = self.rating
     self.rating = 0
 
     self.noteoffsets = {}
@@ -166,59 +189,32 @@ function Gameplay:reset()
         {
             name = "marvellous", img = skin:format("judgements/MARVELLOUS.png"),
             time = 23, scoreMultiplier = 1, weight = 125.000,
-            forLN = true
+            forLN = true, colour = {1, 1, 1}
         },
         {
             name = "perfect", img = skin:format("judgements/PERFECT.png"),
             time = 40, scoreMultiplier = 0.93, weight = 122.950,
-            forLN = true
+            forLN = true, colour = {247/255, 242/255, 84/255}
         },
         {
             name = "great", img = skin:format("judgements/GREAT.png"),
             time = 74, scoreMultiplier = 0.7, weight = 81.963,
-            forLN = true
+            forLN = true, colour = {49/255, 188/255, 247/255}
         },
         {
             name = "good", img = skin:format("judgements/GOOD.png"),
             time = 103, scoreMultiplier = 0.55, weight = 40.975,
-            forLN = false
+            forLN = false, colour = {10/255, 204/255, 23/255}
         },
         {
             name = "bad", img = skin:format("judgements/BAD.png"),
             time = 127, scoreMultiplier = 0.3, weight = 20.488,
-            forLN = false
+            forLN = false, colour = {242/255, 120/255, 5/255}
         },
         {
             name = "miss", img = skin:format("judgements/MISS.png"),
             time = 160, scoreMultiplier = 0, weight = 0.000,
-            forLN = false
-        }
-    }
-
-    self.timingColours = {
-        {
-            time = 23,
-            colour = {}
-        },
-        {
-            time = 40,
-            colour = {}
-        },
-        {
-            time = 74,
-            colour = {}
-        },
-        {
-            time = 103,
-            colour = {}
-        },
-        {
-            time = 127,
-            colour = {},
-        },
-        {
-            time = 160,
-            colour = {1, 0, 0}
+            forLN = false, colour = {133/255, 32/255, 4/255}
         }
     }
 
@@ -267,6 +263,20 @@ function Gameplay:addPlayfield(x, y)
     table.insert(self.playfields, playfield)
 end
 
+function Gameplay:createPlayfieldVertSprite(id)
+    local spr = VertSprite(
+        0, 0, 0,
+        self.playfields[math.clamp(1, id or 1, #self.playfields)].canvas
+    )
+    table.insert(
+        self.playfieldVertSprites,
+        spr
+    )
+    spr:updateHitbox()
+
+    return spr
+end
+
 function Gameplay:doHealthIncreaseForJudgement(judgementName)
     local amount = 0
 
@@ -286,37 +296,32 @@ function Gameplay:doHealthIncreaseForJudgement(judgementName)
     self.health = math.clamp(self.healthMin, self.health + amount, self.healthMax)
 end
 
-function Gameplay:doJudgement(time, wasLN)
+function Gameplay:doJudgement(time, wasLN, hasLN, dontAddHitTime)
     local wasLN = wasLN or false
     local judgement = nil
-    if not wasLN then
-        for _, judge in ipairs(self.judgements) do
-            if time <= judge.time then
-                judgement = judge
-                break
-            end
-        end
-    else
-        for _, judge in ipairs(self.judgements) do
-            if time <= judge.time and judge.forLN then
-                judgement = judge
-                break
-            end
+    for _, judge in ipairs(self.judgements) do
+        if math.abs(time) <= judge.time*(wasLN and 1.2 or 1) then
+            judgement = judge
+            break
         end
     end
+
     if not judgement then 
         judgement = self.judgements[not wasLN and #self.judgements or 3] 
     end -- default to miss
 
-    if not wasLN then
-        local score = self.noteScore * judgement.scoreMultiplier
+    local score = self.noteScore * judgement.scoreMultiplier
 
-        self.score = self.score + score
+    self.score = self.score + (score / (hasLN and 2 or 1))
 
-        self.accuracy = self:calculateAccuracy() 
-        if tostring(self.accuracy) == "nan" then self.accuracy = 0 end
-        self.rating = self:calculateRating()
-        if tostring(self.rating) == "nan" then self.rating = 0 end
+    self.accuracy = self:calculateAccuracy() 
+    if tostring(self.accuracy) == "nan" then self.accuracy = 0 end
+    self.rating = self:calculateRating()
+    if tostring(self.rating) == "nan" then self.rating = 0 end
+
+    if not dontAddHitTime then
+        self.hitTimeLines:add(HitTimeLine(time, judgement.colour))
+        table.insert(self.hitTimings, {time = time, musicTime = musicTime})
     end
 
     self.allJudgements[judgement.name] = self.allJudgements[judgement.name] + 1
@@ -358,19 +363,18 @@ function Gameplay:doJudgement(time, wasLN)
     self:doHealthIncreaseForJudgement(judgement.name)
 end
 
--- // Slider Velocity Functions \\ --
 function Gameplay:initializePositionMarkers()
     if #self.sliderVelocities == 0 then
         return
     end
 
     -- Compute for Change Points
-    local position = math.floor(self.sliderVelocities[1].startTime * self.initialScrollVelocity * self.trackRounding)
+    local position = math.floor(self.sliderVelocities[1].startTime * self.initialScrollVelocity * 100)
     table.insert(self.velocityPositionMakers, position)
 
     for i = 2, #self.sliderVelocities do
         position = position + math.floor((self.sliderVelocities[i].startTime - self.sliderVelocities[i - 1].startTime)
-                                         * self.sliderVelocities[i - 1].multiplier * self.trackRounding)
+                                         * self.sliderVelocities[i - 1].multiplier * 100)
         table.insert(self.velocityPositionMakers, position)
     end
 end
@@ -384,15 +388,15 @@ function Gameplay:updateCurrentTrackPosition()
 end
 
 function Gameplay:GetPositionFromTime(time, index)
-    if Settings.options["General"].noScrollVelocity then
-        return time * self.trackRounding
+    if Modifiers.NSV then
+        return time * 100
     end
     if index == 1 then
-        return time * self.initialScrollVelocity * self.trackRounding
+        return time * self.initialScrollVelocity * 100
     end
     index = index - 1
     local curPos = self.velocityPositionMakers[index]
-    curPos = curPos + (time - self.sliderVelocities[index].startTime) * (self.sliderVelocities[index].multiplier or 0) * self.trackRounding
+    curPos = curPos + (time - self.sliderVelocities[index].startTime) * (self.sliderVelocities[index].multiplier or 0) * 100
     return curPos
 end
 
@@ -436,7 +440,7 @@ end
 function Gameplay:getCommonBpm()
     if #self.timingPoints == 0 then
         print("No timing points found")
-        return 0
+        return 120
     end
 
     if #self.unspawnNotes == 0 then
@@ -463,17 +467,18 @@ function Gameplay:getCommonBpm()
         end
     end)
     local lastObject = newNoteTable[1]
-    local lastTime = lastObject.endTime or lastObject.time
+    local lastTime = lastObject.endTime or lastObject.time or self.lastNoteTime
 
     local durations = {}
     for i = 1, #self.timingPoints do
         local point = self.timingPoints[i]
 
-        if point.StartTime > lastTime then
+        if not point or not lastTime then break end
+        if (point.StartTime or lastTime) > lastTime then
             break
         end
-        local duration = (lastTime - (i == 1 and 0 or point.StartTime))
-        lastTime = point.StartTime
+        local duration = (lastTime - (i == 1 and 0 or point.StartTime or lastTime))
+        lastTime = point.StartTime or lastTime
 
         if table.find(durations, point.Bpm) then
             durations[point.Bpm] = durations[point.Bpm] + duration
@@ -483,6 +488,7 @@ function Gameplay:getCommonBpm()
     end
 
     if #durations == 0 then
+        print("New 'common' BPM: " .. self.timingPoints[1].Bpm)
         return self.timingPoints[1].Bpm
     end
 
@@ -504,7 +510,7 @@ function Gameplay:normalizeSVs()
 
     local normalizedScrollVelocities = {}
 
-    local currentBpm = self.timingPoints[1].Bpm
+    local currentBpm = self.timingPoints[1] and self.timingPoints[1].Bpm or baseBpm or 120
     local currentSvIndex = 1
     local currentSvStartTime
     local currentSvMultiplier = 1
@@ -525,7 +531,7 @@ function Gameplay:normalizeSVs()
             end
 
             local sv = self.sliderVelocities[currentSvIndex]
-            if sv.startTime > timingPoint.StartTime then
+            if sv.startTime or 0 > timingPoint.StartTime or 0 then
                 break
             end
 
@@ -606,7 +612,7 @@ function Gameplay:SVFactor()
     for i = 1, #self.unspawnNotes do
         local note = self.unspawnNotes[i]
         table.insert(importantTimestamps, note.time)
-        if note.children[1] then
+        if note.children ~= nil then
             table.insert(importantTimestamps, note.endTime)
         end
     end
@@ -651,10 +657,10 @@ function Gameplay:initPositions()
 end
 
 function Gameplay:getNotePosition(offset, initialPos)
-    if not Modscript.downscroll then
-        return strumY + (((initialPos or 0) - offset) * Settings.options["General"].scrollspeed / self.trackRounding)
+    if self.gameMode == 1 then
+        return strumY + ((((initialPos or 0) - offset) * __getScrollspeed(Settings.options["General"].scrollspeed) / 100) * (Modscript.downscroll and -1 or 1))
     else
-        return strumY - (((initialPos or 0) - offset) * Settings.options["General"].scrollspeed / self.trackRounding)
+        return 225 + ((((initialPos or 0) - offset) * __getScrollspeed(Settings.options["General"].scrollspeed) / 100))
     end
 end
 
@@ -693,39 +699,47 @@ function Gameplay:setupTimingLines()
     end
 end
 
-function Gameplay:updateNotePosition(offset, curTime)
+function Gameplay:updateNotePosition(offset)
     local spritePosition = 0
 
     for _, hitObject in ipairs(self.hitObjects.members) do
-
         if hitObject.time - musicTime > 15000 then -- Only update notes that are within 15 seconds of the current time to prevent lag issues from too many notes
             break
         end
 
         spritePosition = self:getNotePosition(offset, hitObject.initialTrackPosition)
 
-        if not hitObject.moveWithScroll then
-            -- go to strumY (it's a hold)
-            spritePosition = strumY
-        end
-
-        hitObject.y = spritePosition
-
-        if #hitObject.children > 0 then
-            -- Determine the hold notes position and scale
-            hitObject.children[1].y = spritePosition + 100
-            hitObject.children[2].y = spritePosition + 100
-
-            hitObject.endY = self:getNotePosition(offset, hitObject.endTrackPosition)
-            local pixelDistance = hitObject.endY - hitObject.children[1].y + 100-- the distance of start and end we need
-            hitObject.children[1].dimensions = {width = 200, height = pixelDistance}
-            hitObject.children[2].dimensions = {width = 200, height = 100}
-
-            if Modscript.downscroll then
-                hitObject.children[2].y = hitObject.children[2].y + pixelDistance - 100
-            else
-                hitObject.children[2].y = hitObject.children[2].y + pixelDistance + 100
+        if self.gameMode == 1 then
+            if not hitObject.moveWithScroll then
+                -- go to strumY (it's a hold)
+                spritePosition = strumY
             end
+
+            hitObject.y = spritePosition
+
+            if hitObject.children ~= nil then
+                -- Determine the hold notes position and scale
+                hitObject.children[1].y = spritePosition + 100
+                hitObject.children[2].y = spritePosition + 100
+
+                hitObject.endY = self:getNotePosition(offset, hitObject.endTrackPosition)
+                local pixelDistance = hitObject.endY - hitObject.children[1].y + 100-- the distance of start and end we need
+                hitObject.children[1].dimensions = {width = 200, height = pixelDistance}
+                hitObject.children[2].dimensions = {width = 200, height = 100}
+
+                if Modscript.downscroll then
+                    hitObject.children[2].y = hitObject.children[2].y + pixelDistance - 100
+                else
+                    hitObject.children[2].y = hitObject.children[2].y + pixelDistance
+                end
+            end
+        elseif self.gameMode == 2 then
+            if not hitObject.moveWithScroll then
+                -- go to strumY (it's a hold)
+                spritePosition = 225
+            end
+
+            hitObject.x = spritePosition
         end
     end
 end
@@ -776,7 +790,6 @@ end
 
 function Gameplay:enter()
     self:reset()
-    strumY = not Modscript.downscroll and 50 or 825
 
     self.inputsArray = {false, false, false, false}
 
@@ -794,7 +807,7 @@ function Gameplay:enter()
     --table.sort(self.timingPoints.members, function(a, b)
     --    return a.targetY < b.targetY
     --end)
-    self:updateNotePosition(self.currentTrackPosition, musicTime)
+    self:updateNotePosition(self.currentTrackPosition)
     self:addObjectsToGroups()
 
     safeZoneOffset = 160 -- start/end ms time for a note to be able to be hit
@@ -802,6 +815,16 @@ function Gameplay:enter()
     self:add2(self.comboGroup)
 
     self:addPlayfield(0, 0) -- Add the main playfield. We need at least one playfield to draw the notes
+    self:createPlayfieldVertSprite(1)
+
+   --[[  local p1 = GetMainPlayfieldVertSprite()
+    CreatePlayfield(0, 0)
+    local p2 = CreatePlayfieldVertSprite(2)
+
+    p1.x, p2.x = -400, 400
+    --[[ QueueEase(1, 2, "Drunk", 1, linear, 2)--
+    QueueEase(2, 3, "Tipsy", 1, linear, 0)
+    QueueSet(0, "Reverse", 1, 1) ]]
 
     if self.ableToModscript then
         Modscript:call("Start")
@@ -836,6 +859,7 @@ function Gameplay:enter()
 
     if shaders and shaders.backgroundEffects then
         shaders.backgroundEffects:send("dim", Settings.options["General"].backgroundDim)
+        shaders.backgroundEffects:send("blur_radius", Settings.options["General"].backgroundBlur)
     end
 
     Timer.after(1.2, function() -- forced delay to prevent potential desync's
@@ -848,7 +872,7 @@ end
 function Gameplay:addObjectsToGroups()
     for _, ho in ipairs(self.unspawnNotes) do
         ho.x = self.strumLineObjects.members[ho.data].x
-        if #ho.children > 0 then
+        if ho.children ~= nil then
             ho.children[1].x = ho.x
             ho.children[2].x = ho.x
         end
@@ -860,13 +884,22 @@ function Gameplay:generateStrums()
     --self.bgLane.x = self.strumX - ((self.mode - 4) * (200 * 0.0185))
     -- above code, but with Settings.options["General"].columnSpacing
     self.strumX = self.strumX - (self.mode * Settings.options["General"].columnSpacing) / 2
-    self.bgLane.x = self.strumX - ((self.mode - 4) * ((200 + Settings.options["General"].columnSpacing) * 0.0185))
+    self.bgLane.x = self.strumX - 15
     for i = 1, self.mode do
         self.noteoffsets[i] = {x=0, y=0}
         local strum = StrumObject(self.strumX, strumY, i)
 
         self.strumLineObjects:add(strum)
         strum:postAddToGroup()
+
+        Try(
+            function()
+                __defaultPositions[1][i].x, __defaultPositions[1][i].y =
+                    states.game.Gameplay.strumLineObjects.members[i].x, states.game.Gameplay.strumLineObjects.members[i].y
+            end,
+            function(e)
+            end
+        )
     end
 
     --self.bgLane.width = self.mode * (200 + Settings.options["General"].columnSpacing + 10)
@@ -874,7 +907,7 @@ function Gameplay:generateStrums()
     -- do some math to convert the 10 to other values. Higher columnSpacing = higher number
     -- Lower columnSpacing = lower number
     local normalPadding = 12
-    normalPadding = normalPadding / (Settings.options["General"].columnSpacing * 1.25 + 1)
+    normalPadding = normalPadding / (Settings.options["General"].columnSpacing + 1)
     self.bgLane.width = self.mode * (200 + Settings.options["General"].columnSpacing + normalPadding)
 end
 
@@ -944,8 +977,13 @@ function Gameplay:update(dt)
     end
     MenuSoundManager:removeAllSounds() -- a final safe guard to remove any sounds that may have been left over
     if self.inPause then return end
+    if self.ableToModscript and self.updateTime then
+        Modscript:call("OnUpdate", {dt, musicTime, self.soundManager:getBeat("music")})
+        Modscript:update(dt)
+    end
     if self.updateTime then
-        if musicTime >= 0 and not self.soundManager:isPlaying("music") and musicTime < 1000 then
+        if musicTime >= 0 and not self.soundManager:isPlaying("music") and musicTime < 1000 and self.score < 100 then
+            self.soundManager:setPitch("music", Modifiers.Rate)
             self.soundManager:play("music")
             musicTime = 0
         elseif ((self.lastNoteIsFinish and musicTime > self.lastNoteTime+750) or (not self.lastNoteIsFinish and not self.soundManager:isPlaying("music") and musicTime > self.lastNoteTime+750)) then
@@ -964,11 +1002,23 @@ function Gameplay:update(dt)
                 love.filesystem.write("replays/" .. self.songName .. " - " .. self.difficultyName .. " - " .. os.time() .. ".ritreplay", json.encode(self.replay))
             end
             if Steam and networking.connected and networking.currentServerData and networking.inMultiplayerGame then
-                switchState(states.menu.StartMenu, 0.3, nil, {score = self.score, accuracy = self.accuracy, misses = self.misses, maxCombo = self.combo})
+                switchState(states.menu.StartMenu, 0.3, nil, {score = self.score, accuracy = self.accuracy, misses = self.misses, maxCombo = self.maxCombo})
+                if networking.connected then
+                    networking.hub:publish({
+                        message = {
+                            action = "updateServerInfo_FORCEREMOVEUSER",
+                            id = networking.currentServerID,
+                            user = {
+                                steamID = tostring(SteamID),
+                                name = tostring(SteamUserName)
+                            }
+                        }
+                    })
+                end
                 MenuSoundManager:removeAllSounds()
                 self.soundManager:removeAllSounds()
             else
-                switchState(states.screens.game.ResultsScreen, 0.3, nil, {score = self.score, accuracy = self.accuracy, misses = 0, maxCombo = 423, rating = 19.23,
+                switchState(states.screens.game.ResultsScreen, 0.3, nil, {score = self.score, accuracy = self.accuracy, misses = self.misses, maxCombo = self.maxCombo, rating = self.rating,
                     judgements = {
                         marvellous = self.allJudgements["marvellous"],
                         perfect = self.allJudgements["perfect"],
@@ -976,18 +1026,22 @@ function Gameplay:update(dt)
                         good = self.allJudgements["good"],
                         bad = self.allJudgements["bad"],
                         miss = self.misses
-                    }}
-                )
+                    },
+                    timings = self.hitTimings,
+                    songLength = self.lastNoteTime
+                })
                 MenuSoundManager:removeAllSounds()
 
                 -- Only save stats for singleplayer
-                --[[ _USERDATA.ratingAltogether = _USERDATA.ratingAltogether + self.rating ]] -- actualyl a table
-                _USERDATA.allRatings = _USERDATA.allRatings or {}
-                table.insert(_USERDATA.allRatings, self.rating)
-                _USERDATA.totalScore = (_USERDATA.totalScore or 0) + self.score
-                _USERDATA.averageAccuracy = (_USERDATA.averageAccuracy or 0) + self.accuracy
-                _USERDATA.totalHits = (_USERDATA.totalHits or 0) + self.hits
-                _USERDATA.plays = (_USERDATA.plays or 0) + 1
+                --[[ _USERDATA.allRatings = _USERDATA.allRatings or {}
+                table.insert(_USERDATA.allRatings, self.rating) ]]
+                if API.LoggedInUser.id then
+                    API.LoggedInUser.totalScore = (API.LoggedInUser.totalScore or 0) + self.score
+                    API.LoggedInUser.totalAccuracy = (API.LoggedInUser.totalAccuracy or 0) + self.accuracy
+                    API.LoggedInUser.totalHits = (API.LoggedInUser.totalHits or 0) + self.hits
+                    API.LoggedInUser.playCount = (API.LoggedInUser.playCount or 0) + 1
+                    API:SetUserData()
+                end
             end
             return
         elseif self.escapeTimer >= 0.7 then
@@ -997,11 +1051,13 @@ function Gameplay:update(dt)
             self.updateTime = false
             return
         else
-            if (self.background and self.background.play) and (musicTime >= 0 and musicTime < self.lastNoteTime-1000) and self.soundManager:isPlaying("music") then
+            if (self.background and self.background.play) and (musicTime >= 0 and musicTime < self.lastNoteTime) and self.soundManager:isPlaying("music") then
                 self.background:play(musicTime/1000)
             end
             musicTime = musicTime + (love.timer.getTime() * 1000) - (previousFrameTime or (love.timer.getTime()*1000))
-            self.soundManager:update(dt)
+            if self.soundManager:isPlaying("music") then
+                self.soundManager:update(dt)
+            end
             previousFrameTime = love.timer.getTime() * 1000
         end
         if musicTime <= self.firstNoteTime and self.hasSkipPeriod and input:pressed("Skip_Key") then
@@ -1014,7 +1070,7 @@ function Gameplay:update(dt)
         end
         self:updateCurrentTrackPosition()
         if not self.ableToModscript then -- Use default note positioning
-            self:updateNotePosition(self.currentTrackPosition, musicTime)
+            self:updateNotePosition(self.currentTrackPosition)
         end
     end
 
@@ -1023,7 +1079,7 @@ function Gameplay:update(dt)
     end
 
     if self.ableToModscript then
-        Modscript:update(dt, self.soundManager:getBeat("music"))
+        --[[ Modscript:update(dt, self.soundManager:getBeat("music")) ]]
     end
 
     self.storyBoardSprites.Foreground:update(dt)
@@ -1035,6 +1091,7 @@ function Gameplay:update(dt)
             local tp = self.timingPoints[1]
 
             if (tp.StartTime or 0) <= musicTime then
+                print(tp.Bpm)
                 self.soundManager:setBPM("music", (tp.Bpm or 120))
                 table.remove(self.timingPoints, 1)
             end
@@ -1044,6 +1101,15 @@ function Gameplay:update(dt)
     for _, member in ipairs(self.members) do
         if member.update then
             member:update(dt)
+        end
+    end
+
+    --[[ self.hitTimeLines:update(dt) ]]
+    for i, hitTimeLine in ipairs(self.hitTimeLines.members) do
+        if not hitTimeLine then return end
+        hitTimeLine:update(dt)
+        if hitTimeLine.alpha <= 0 then
+            table.remove(hitTimeLine, i)
         end
     end
 
@@ -1062,10 +1128,10 @@ function Gameplay:update(dt)
                     if musicTime - ho.time > self.objectKillOffset and not ho.wasGoodHit then
                         ho.active = false
                         ho.visible = false
-                        ho:kill()
+                        if ho.kill then ho:kill() end
                         self.hitObjects:remove(ho)
-                        ho:destroy()
-                        self:doJudgement(1000) -- miss
+                        if ho.destroy then ho:destroy() end
+                        self:doJudgement(10000, false, false, true)
                     end
                 end
             end
@@ -1104,15 +1170,23 @@ function Gameplay:update(dt)
     end
 end
 
-function Gameplay:keyPressed(key)
-    local cloned = self.hitsound:clone()
-    cloned:setVolume(Settings.options["General"].hitsoundVolume)
-    cloned:play()
-    cloned:release()
+function Gameplay:checkForAudioSync()
+    -- If theres a 100ms difference between the current time of the audio file, and the MusicTime, then set the musicTime to the current audio file time
+    local audioTime = (self.soundManager:tell("music", "seconds") * 1000) / Modifiers.Rate
+    local absDiff = math.abs(audioTime - musicTime)
+    return absDiff > 25
+end
 
+function Gameplay:resyncAudio()
+    musicTime = (self.soundManager:tell("music", "seconds") * 1000) / Modifiers.Rate
+end
+
+function Gameplay:keyPressed(key)
     if not self.watchingReplay then
         table.insert(self.replay.hits, {key=key, time=musicTime, releasedTime=musicTime})
     end
+
+    local didANote = false
 
     if self.updateTime then
         if #self.hitObjects.members > 0 then
@@ -1123,7 +1197,7 @@ function Gameplay:keyPressed(key)
             local sortedNotesList = {}
 
             for _, note in ipairs(self.hitObjects.members) do
-                if note.canBeHit and not note.tooLate and not note.wasGoodHit and not note.isSustainNote then
+                if note.canBeHit and not note.tooLate and not note.wasGoodHit and not note.isSustainNote and note.type == 1 then
                     if key == note.data then
                         table.insert(sortedNotesList, note)
                     end
@@ -1146,12 +1220,20 @@ function Gameplay:keyPressed(key)
                     end
 
                     if not notesStopped then
-                        self:goodNoteHit(epicNote, math.abs(math.round(epicNote.time - lastTime)))
+                        didANote = true
+                        self:goodNoteHit(epicNote, math.round(epicNote.time - lastTime))
                     end
                     table.insert(pressNotes, epicNote)
                 end
             end
         end
+    end
+
+    if not didANote then
+        local cloned = self.hitsounds["Default"]:clone()
+        cloned:setVolume((Settings.options["Audio"].hitsound/100) * skinData.Miscellaneous.hitsoundVolume)
+        cloned:play()
+        cloned:release()
     end
 end
 
@@ -1175,7 +1257,10 @@ function Gameplay:keyReleased(key)
             ho:kill()
             ho:destroy()
             self.combo = self.combo + 1
-            self:doJudgement(math.abs(ho.endTime - musicTime), true)
+            if self.combo > self.maxCombo then
+                self.maxCombo = self.combo
+            end
+            self:doJudgement(ho.endTime - musicTime, true, ho.children ~= nil)
             self.hitObjects:remove(ho)
             break
         end
@@ -1186,11 +1271,15 @@ function Gameplay:keyDown(key)
     self.inputsArray[key] = true
 
     for _, ho in ipairs(self.hitObjects.members) do
-        if ho.data == key and not ho.moveWithScroll then -- HOLD NOTE
+        if ho.data == key and not ho.moveWithScroll and ho.type == 1 then -- HOLD NOTE
             -- if in a distance of 15ms, then remove note
             if ho.endTime - musicTime <= -15 then
                 ho.visible = false
                 break
+            end
+        elseif ho.type == 2 then
+            if math.abs(ho.time - musicTime) < 15 then
+                self:goodNoteHit(ho, 0)
             end
         end
     end
@@ -1201,12 +1290,16 @@ end
 function Gameplay:goodNoteHit(note, time)
     if not note.wasGoodHit then
         note.wasGoodHit = true
+        note:onHit()
 
         if not note.isSustainNote then
             self.combo = self.combo + 1
+            if self.combo > self.maxCombo then
+                self.maxCombo = self.combo
+            end
             self.hits = self.hits + 1
-            self:doJudgement(time)
-            if #note.children > 0 then
+            self:doJudgement(time, false, note.children ~= nil)
+            if note.children ~= nil then
                 note.moveWithScroll = false
             else
                 note.visible = false
@@ -1226,8 +1319,12 @@ function Gameplay:substateReturn(restarted, leftGame)
     self.updateTime = true
 end
 
+function Gameplay:getShader(name)
+    return self.shaderList[name or self.curShader]
+end
+
 function Gameplay:draw()
-    if self.background and musicTime >= 0 then
+    if self.background then
         -- background dim is 0-1, 0 being no dim, 1 being full backgroun dim
         if shaders and shaders.backgroundEffects then
             love.graphics.setShader(shaders.backgroundEffects)
@@ -1288,17 +1385,40 @@ function Gameplay:draw()
             -- move down the playfield based off scale, 4 = 0
             love.graphics.translate(0, (self.mode - 4) * 25)
             for _, playfield in ipairs(self.playfields) do
-                playfield:draw(self.hitObjects.members, self.timingLines.members, self.bgLane.width, scale*Settings.options["General"].noteSize, self.bgLane.x)
+                playfield:draw(self.hitObjects.members, self.timingLines.members, scale*Settings.options["General"].noteSize)
             end
         love.graphics.pop()
     love.graphics.pop()
 
-    -- draw members2
+    local lastCanvas = love.graphics.getCanvas()
+    love.graphics.setCanvas(self.playfieldsCanvas)
+    love.graphics.clear()
+    for _, playfieldVertSprite in ipairs(self.playfieldVertSprites) do
+        playfieldVertSprite:draw()
+    end
+
+    -- draw members2 (judgements and combo)
     for _, member in ipairs(self.members2) do
         if member.draw then
             member:draw()
         end
     end
+
+    love.graphics.setCanvas(lastCanvas)
+
+    local lastShader
+    if love.graphics.getSupportedShader() then
+        lastShader = love.graphics.getShader()
+        love.graphics.setShader(self.shaderList[self.curShader])
+    end
+
+    love.graphics.draw(self.playfieldsCanvas)
+
+    if love.graphics.getSupportedShader() then
+        love.graphics.setShader(lastShader)
+    end
+
+    self.hitTimeLines:draw()
 
     for _, spr in pairs(Modscript.funcs.sprites) do
         if not spr.drawWithoutRes and spr.drawOverNotes then
@@ -1321,40 +1441,45 @@ function Gameplay:draw()
 
     local lastFont = love.graphics.getFont()
     love.graphics.setFont(Cache.members.font["menuBold"])
-    love.graphics.printf(localize("Score: ") .. string.format("%07d", math.round(math.floor(lerpedScore))), 0, 0, 960, "right", 0, 2, 2)
-    love.graphics.printf(localize("Accuracy: ") .. string.format("%.2f", lerpedAccuracy) .. "%", 0, 50, 960, "right", 0, 2, 2)
-    love.graphics.printf(localize("Rating: ") .. string.format("%.2f", lerpedRating), 0, 100, 960, "right", 0, 2, 2)
+    love.graphics.printf(string.format("%07d", math.round(math.floor(lerpedScore))), 0, 0, 960, "right", 0, 2, 2)
+    love.graphics.printf(string.format("%.2f", lerpedAccuracy) .. "%", 0, 50, 960, "right", 0, 2, 2)
+    love.graphics.printf(string.format("%.2f", lerpedRating), 0, 100, 960, "right", 0, 2, 2)
 
     if musicTime <= self.firstNoteTime and self.hasSkipPeriod and input:pressed("Skip_Key") then
-        -- right align
-        love.graphics.setColor(1,1,1,1)
         love.graphics.printf(localize("Press SPACE to skip intro"), 0, Inits.GameWidth-50, 960, "right", 0, 2, 2)
     end
 
-    love.graphics.rectangle("fill", self.bgLane.width*1.6 + 50, Inits.GameHeight - 50, 25, -lerpedHealth * 5)
+    love.graphics.rectangle("fill", 0, 0, lerpedHealth * 5, 15)
+
+    love.graphics.setColor(0.2, 0.2, 0.2)
+    love.graphics.rectangle("fill", 0, Inits.GameHeight-10, Inits.GameWidth, 10)
+    love.graphics.setColor(1, 1, 1)
+    local pert = musicTime / self.lastNoteTime
+    love.graphics.rectangle("fill", 0, Inits.GameHeight-10, Inits.GameWidth * pert, 10)
 
     love.graphics.setFont(lastFont)
 end
 
 function Gameplay:generateBeatmap(chartType, songPath, folderPath, diffName, forNPS)
     self.mode = 4 -- Amount of key lanes, reset to 4 until the chart specifies otherwise
-    Parsers[chartType].load(songPath, folderPath, diffName, forNPS)
+    Parsers[chartType].load(songPath, folderPath, diffName, forNPS, self.gameMode)
     
 
-    --[[ self:normalizeSVs() ]]
     self:SVFactor()
+    
     table.sort(self.unspawnNotes, function(a, b)
         return a.time < b.time
     end)
 
-    local lastNoteTime = #self.unspawnNotes > 0 and self.unspawnNotes[#self.unspawnNotes].time or 0
-    if #self.unspawnNotes > 0 then
-        if self.unspawnNotes[#self.unspawnNotes].endTime then
-            if self.unspawnNotes[#self.unspawnNotes].endTime > lastNoteTime then
-                lastNoteTime = self.unspawnNotes[#self.unspawnNotes].endTime
-            end
+    local lastNoteTime = 0
+    for _, note in ipairs(self.unspawnNotes) do
+        local time = (((note.endTime or 0) > 0 and (note.endTime or 0) > note.time) and (note.endTime or 0)) or note.time
+        if time > lastNoteTime then
+            lastNoteTime = time
         end
-    end
+    end 
+
+    self.totalNoteCount = #self.unspawnNotes
     self.lastNoteTime = lastNoteTime
     local firstNoteTime = #self.unspawnNotes > 0 and self.unspawnNotes[1].time or 0
     self.firstNoteTime = firstNoteTime
@@ -1368,11 +1493,17 @@ function Gameplay:generateBeatmap(chartType, songPath, folderPath, diffName, for
         Modscript.vars = {sprites={}} -- reset modscript vars
 
         self.mode = tonumber(self.mode)
-        self:generateStrums()
         local modPath = folderPath .. "/mod/mod.lua"
         if love.filesystem.getInfo(modPath) then
             self.ableToModscript = Modscript:load(modPath)
+            if self.ableToModscript then
+                Modscript.downscroll = false
+            else
+                Modscript.downscroll = Settings.options["General"].downscroll
+            end
         end
+        strumY = not Modscript.downscroll and 50 or 825
+        self:generateStrums()
 
         if discordRPC then
             local details = ""
@@ -1396,6 +1527,20 @@ function Gameplay:generateBeatmap(chartType, songPath, folderPath, diffName, for
         if self.ableToModscript then
             self.soundManager:setBeatCallback("music", function(beat)
                 Modscript:call("OnBeat", {beat})
+
+                local needToResync = self:checkForAudioSync()
+                if needToResync and beat > 0 and musicTime > 0 then
+                    print("RESYNCING AUDIO")
+                    self:resyncAudio()
+                end
+            end)
+        else
+            self.soundManager:setBeatCallback("music", function(beat)
+                local needToResync = self:checkForAudioSync()
+                if needToResync and beat > 0 and musicTime > 0 then
+                    print("RESYNCING AUDIO")
+                    self:resyncAudio()
+                end
             end)
         end
     end
@@ -1404,6 +1549,8 @@ end
 function Gameplay:exit()
     musicTime = 0
     currentController = menuController
+    MAINGAME.curShader = ""
+    self.curShader = ""
 end
 
 return Gameplay

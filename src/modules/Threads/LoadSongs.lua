@@ -11,6 +11,7 @@ require "modules.Game.SongHandler"
 GameInit = require "modules.GameInit"
 json = require "lib.jsonhybrid"
 tinyyaml = require "lib.tinyyaml"
+Modifiers = require "modules.Game.Modifiers"
 
 local channel = love.thread.getChannel("ThreadChannels.LoadSongs.Output")
 
@@ -18,9 +19,20 @@ GameInit.LoadParsers()
 
 function HitObject(startTime, lane, endTime)
     local self = {}
+
     self.time = startTime
     self.endTime = endTime
     self.data = lane
+
+    return self
+end
+
+function TaikoObject(startTime, type, isBig)
+    local self = {}
+
+    self.time = startTime
+    self.type = type
+    self.isBig = isBig
 
     return self
 end

@@ -2,10 +2,12 @@ local ritLoader = {}
 local currentBlock = ""
 local folderPath
 local _forNPS
+local noteCount, endNoteTime = 0, 0
 
 local title, diff
 
 function ritLoader.load(chart, folderPath_, diffName, forNPS)
+    noteCount, endNoteTime = 0, 0
     _forNPS = forNPS or false
     curChart = "Rit"
     folderPath = folderPath_
@@ -24,20 +26,11 @@ function ritLoader.load(chart, folderPath_, diffName, forNPS)
     __diffName = diff
 
     if forNPS then
-        local noteCount = #states.game.Gameplay.unspawnNotes
-        local songLength = 0
-        local endNote = states.game.Gameplay.unspawnNotes[#states.game.Gameplay.unspawnNotes]
-        if endNote.endTime ~= 0 and endNote.endTime ~= endNote.time then
-            songLength = endNote.endTime
-        else
-            songLength = endNote.time
-        end
-
         states.game.Gameplay.unspawnNotes = {}
         states.game.Gameplay.timingPoints = {}
         states.game.Gameplay.sliderVelocities = {}
 
-        return noteCount / (songLength / 1000)
+        return noteCount / (endNoteTime / 1000)
     end
 end
 
@@ -68,23 +61,28 @@ function ritLoader.processVelocities(line)
     local info = line:split(":")
     if _forNPS then return end
     table.insert(states.game.Gameplay.sliderVelocities, {
-        startTime = tonumber(info[1]),
-        multiplier = tonumber(info[2])
+        startTime = (tonumber(info[1]) or 1) / Modifiers.Rate,
+        multiplier = tonumber(info[2]) or 1
     })
 end
 
 function ritLoader.addHitObject(line)
     local info = line:split(":")
-    local startTime = tonumber(info[1])
-    local endTime = tonumber(info[2])
-    local lane = tonumber(info[3])
+    local startTime = tonumber(info[1]) or 0
+    local endTime = tonumber(info[2]) or 0
+    local lane = tonumber(info[3]) or 1
 
     if not startTime then goto continue end
 
     if doAprilFools and Settings.options["Events"].aprilFools then lane = 1; states.game.Gameplay.mode = 1 end
 
-    local ho = HitObject(startTime, lane, endTime)
-    table.insert(states.game.Gameplay.unspawnNotes, ho)
+    if not _forNPS then
+        local ho = HitObject(startTime, lane, endTime)
+        table.insert(states.game.Gameplay.unspawnNotes, ho)
+    else
+        noteCount = noteCount + 1
+        endNoteTime = ((endTime and endTime ~= 0) and endTime) or startTime
+    end
 
     ::continue::
 end
@@ -96,6 +94,7 @@ function ritLoader.processMetadata(line)
     elseif key == "SongDiff" then
         diff = value
     elseif key == "KeyAmount" then
+        if _forNPS then return end
         states.game.Gameplay.mode = tonumber(value)
         states.game.Gameplay.strumX = states.game.Gameplay.strumX - ((states.game.Gameplay.mode - 4.5) * (100 + (not _forNPS and Settings.options["General"].columnSpacing or 0)))
     elseif key == "AudioFile" then
